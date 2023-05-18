@@ -1,4 +1,5 @@
 ##  irq-delay
+监控中断被延迟的时间
 ### 查看帮助信息
 通过如下命令查看本功能的帮助信息：
 ```
@@ -16,8 +17,6 @@ diagnose-tools irq-delay --help
         --report dump log with text.
         --test testcase for irq-delay.
 ```
-### 安装KO
-参见《安装和卸载KO》一节
 ### 激活功能
 激活本功能的命令是：
 ```
@@ -42,12 +41,6 @@ diagnose-tools irq-delay --activate="threshold=80"
     阈值(ms)：	80
     输出级别：	0
 ```
-### 测试用例
-执行如下命令触发测试用例：
-```
-sh /usr/diagnose-tools/test.sh irq-delay
-```
-
 ### 查看设置参数
 使用如下命令查看本功能的设置参数：
 ```
@@ -67,12 +60,37 @@ diagnose-tools irq-delay --report
 ```
 输出结果示例如下：
 ```
-中断延迟，PID： 164390[diagnose-tools]， CPU：39, 96 ms, 时间：[1583993047:186455]
-    时间：[1583993047:186455].
-    进程信息： [/ / diagnose-tools]， PID： 164390 / 164390
-##CGROUP:[/]  164390      [001]  采样命中
+中断延迟，PID： 1665[vmtoolsd]， CPU：1, 116 ms, 时间：[1684392217:605473]
+    时间：[1684392217:605473].
+    进程信息： [/ / vmtoolsd]， PID： 1665 / 1665
+##CGROUP:[/]  1665      [003]  采样命中
     内核态堆栈：
-#@        0xffffffff81025022 save_stack_trace_tsk  ([kernel.kallsyms])
+#@        0xffffffffc0cd8eb9 diag_task_kern_stack	[diagnose]  ([kernel.kallsyms])
+#@        0xffffffffc0ce5303 irq_delay_timer	[diagnose]  ([kernel.kallsyms])
+#@        0xffffffffc0ce0e12 hrtimer_handler	[diagnose]  ([kernel.kallsyms])
+#@        0xffffffffba39c365 __hrtimer_run_queues  ([kernel.kallsyms])
+#@        0xffffffffba39d196 hrtimer_interrupt  ([kernel.kallsyms])
+#@        0xffffffffba289b0f __sysvec_apic_timer_interrupt  ([kernel.kallsyms])
+#@        0xffffffffbb12061b sysvec_apic_timer_interrupt  ([kernel.kallsyms])
+#@        0xffffffffbb200e8b asm_sysvec_apic_timer_interrupt  ([kernel.kallsyms])
+#@        0xffffffffba992032 clear_page_orig  ([kernel.kallsyms])
+#@        0xffffffffba571eb8 get_page_from_freelist  ([kernel.kallsyms])
+#@        0xffffffffba573337 __alloc_pages  ([kernel.kallsyms])
+#@        0xffffffffba59be00 alloc_pages  ([kernel.kallsyms])
+#@        0xffffffffbae0053b alloc_skb_with_frags  ([kernel.kallsyms])
+#@        0xffffffffbadf66fa sock_alloc_send_pskb  ([kernel.kallsyms])
+#@        0xffffffffbaf89906 unix_stream_sendmsg  ([kernel.kallsyms])
+#@        0xffffffffbadeeeea sock_sendmsg  ([kernel.kallsyms])
+#@        0xffffffffbadef2a7 ____sys_sendmsg  ([kernel.kallsyms])
+#@        0xffffffffbadf2666 ___sys_sendmsg  ([kernel.kallsyms])
+#@        0xffffffffbadf2766 __sys_sendmsg  ([kernel.kallsyms])
+#@        0xffffffffbadf27ed __x64_sys_sendmsg  ([kernel.kallsyms])
+#@        0xffffffffbb11c168 do_syscall_64  ([kernel.kallsyms])
+#@        0xffffffffbb20009b entry_SYSCALL_64_after_hwframe  ([kernel.kallsyms])
+    用户态堆栈：
+#~        0x7fdbbe20ec53 0x7fdbbe20ec53 ([symbol])
+#*        0xffffffffffffff vmtoolsd (UNKNOWN)
+##
 ```
 每次输出结果后，历史数据将被清空。
 
@@ -82,7 +100,7 @@ diagnose-tools irq-delay --report
 diagnose-tools irq-delay --report > irq-delay.log
 diagnose-tools flame --input=irq-delay.log --output=irq-delay.svg
 ```
-该命令将生成的火焰图保存到irq-delay.svg中。
+该命令将生成的火焰图保存到[irq-delay.svg](FlameGraph/irq-delay.svg)中。
 
 ### 关闭功能
 通过如下命令关闭本功能：
