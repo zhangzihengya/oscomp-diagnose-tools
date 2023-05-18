@@ -1,11 +1,15 @@
 ##  irq-delay
-监控中断被延迟的时间
+
 ### 查看帮助信息
+
 通过如下命令查看本功能的帮助信息：
+
 ```
 diagnose-tools irq-delay --help
 ```
+
 结果如下：
+
 ```
     irq-delay usage:
         --help irq-delay help info
@@ -17,48 +21,68 @@ diagnose-tools irq-delay --help
         --report dump log with text.
         --test testcase for irq-delay.
 ```
+
 ### 激活功能
+
 激活本功能的命令是：
+
 ```
 diagnose-tools irq-delay --activate
 ```
+
 在激活本功能时，可用参数为：
+
 * verbose：该参数控制输出的详细程度，可以是任意整数。当前未用。
 * threshold：配置长时间关中断的阈值，超过该阈值将引起警告信息输出。时间单位是ms。
-例如，如下命令会将检测阈值设置为80ms。一旦系统有超过80ms的关中断代码，将输出其调用链：
+  例如，如下命令会将检测阈值设置为80ms。一旦系统有超过80ms的关中断代码，将输出其调用链：
+
 ```
 diagnose-tools irq-delay --activate="threshold=80"
 ```
+
 如果成功，将在控制台输出如下：
+
 ```
 功能设置成功，返回值：0
     阈值(ms)：	80
     输出级别：	0
 ```
+
 如果失败，将在控制台输出如下：
+
 ```
 功能设置失败，返回值：-16
     阈值(ms)：	80
     输出级别：	0
 ```
+
 ### 查看设置参数
+
 使用如下命令查看本功能的设置参数：
+
 ```
 diagnose-tools irq-delay --settings
 ```
+
 结果如下：
+
 ```
 功能设置：
     是否激活：√
     阈值(ms)：80
     输出级别：0
 ```
+
 ### 查看结果
+
 系统会记录一段时间内中断被延迟的调用链。执行如下命令查看本功能的输出结果：
+
 ```
 diagnose-tools irq-delay --report
 ```
+
 输出结果示例如下：
+
 ```
 中断延迟，PID： 1665[vmtoolsd]， CPU：1, 116 ms, 时间：[1684392217:605473]
     时间：[1684392217:605473].
@@ -92,27 +116,42 @@ diagnose-tools irq-delay --report
 #*        0xffffffffffffff vmtoolsd (UNKNOWN)
 ##
 ```
+
 每次输出结果后，历史数据将被清空。
 
 ### 生成火焰图
+
 可以用如下命令获取结果并生成火焰图：
+
 ```
 diagnose-tools irq-delay --report > irq-delay.log
 diagnose-tools flame --input=irq-delay.log --output=irq-delay.svg
 ```
-该命令将生成的火焰图保存到[irq-delay.svg](FlameGraph/irq-delay.svg)中。
+
+该命令将生成的火焰图保存到irq-delay.svg中，使用浏览器打开如下所示：
+
+<div align="center"><img src = "https://gitee.com/nan-shuaibo/image/raw/master/image-20230518152145758.png">
 
 ### 关闭功能
+
 通过如下命令关闭本功能：
+
 ```
 diagnose-tools irq-delay --deactivate
 ```
+
 如果成功，控制台打印如下：
+
 ```
 irq-delay is not activated
 ```
+
 如果失败，控制台打印如下：
+
 ```
 deactivate irq-delay fail, ret is -1
 ```
+
 关闭功能后，本功能将不会对系统带来性能影响。
+
+
