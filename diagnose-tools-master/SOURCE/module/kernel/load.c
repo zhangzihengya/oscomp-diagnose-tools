@@ -38,6 +38,10 @@
 
 #include "uapi/load_monitor.h"
 
+#define task_contributes_to_load(task)	\
+				((task->__state & TASK_UNINTERRUPTIBLE) != 0 && \
+				 (task->flags & PF_FROZEN) == 0)
+
 static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
 
 static struct diag_load_monitor_settings load_monitor_settings;
@@ -206,7 +210,7 @@ void diag_load_timer(struct diag_percpu_context *context)
 		diag_variant_buffer_seal(&load_monitor_variant_buffer);
 		diag_variant_buffer_spin_unlock(&load_monitor_variant_buffer, flags);
 		do_each_thread(g, p) {
-			if ((p->state == TASK_RUNNING)
+			if ((p->__state == TASK_RUNNING)
 				|| task_contributes_to_load(p)) {
 				tsk_info.et_type = et_load_monitor_task;
 				tsk_info.id = event_id;
