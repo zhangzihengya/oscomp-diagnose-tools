@@ -45,6 +45,7 @@
 
 #include "uapi/exit_monitor.h"
 
+static BLOCKING_NOTIFIER_HEAD(task_exit_notifier);
 static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
 struct diag_exit_monitor_settings exit_monitor_settings;
 
@@ -172,8 +173,7 @@ static int __activate_exit_monitor(void)
 	if (ret)
 		goto out_variant_buffer;
 	exec_monitor_alloced = 1;
-
-	profile_event_register(PROFILE_TASK_EXIT, &task_exit_nb);
+	blocking_notifier_chain_register(&task_exit_notifier, &task_exit_nb);
 	exit_monitor_event_id++;
 	return 1;
 out_variant_buffer:
@@ -190,7 +190,7 @@ int activate_exit_monitor(void)
 
 static void __deactivate_exit_monitor(void)
 {
-	profile_event_unregister(PROFILE_TASK_EXIT, &task_exit_nb);
+	blocking_notifier_chain_unregister(&task_exit_notifier, &task_exit_nb);
 
 	synchronize_sched();
 	msleep(10);
