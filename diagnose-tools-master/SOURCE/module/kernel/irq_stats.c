@@ -58,7 +58,7 @@ static void clean_data(void)
 		do {
 			nr_found = radix_tree_gang_lookup(&context->irq_stats.irq_tree,
 					(void **)func_runtimes, pos, NR_BATCH);
-			for (i = 0; i < nr_found; i++) {
+			for ( i = 0; i < nr_found; i++ ) {
 				func_runtime = func_runtimes[i];
 				radix_tree_delete(&context->irq_stats.irq_tree,
 							(unsigned long)func_runtime->handler);
