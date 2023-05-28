@@ -431,12 +431,20 @@ static int __activate_mutex_monitor(void)
 	}
 	//get_argv_processes(&mm_tree);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 	new_mutex_lock(orig_text_mutex);
 	JUMP_INSTALL(mutex_lock);
 	JUMP_INSTALL(mutex_unlock);
 	new_mutex_unlock(orig_text_mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 
 	return 1;
 out_variant_buffer:
@@ -452,14 +460,22 @@ static void __deactivate_mutex_monitor(void)
 		unhook_tracepoint("sched_process_exit", trace_sched_process_exit_hit, NULL);
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 	new_mutex_lock(orig_text_mutex);
 
 	JUMP_REMOVE(mutex_lock);
 	JUMP_REMOVE(mutex_unlock);
 
 	new_mutex_unlock(orig_text_mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 
 	clean_data();
 
