@@ -28,5 +28,5 @@
     
     make pkg          # 制作rpm安装包
     
-  第四步、即可按照工具使用说明进行操作了
+  第四步、即可按照[工具使用说明](https://gitlab.eduxiji.net/202311664111382/project1466467-176202/-/tree/main/%E5%B7%A5%E5%85%B7%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E)进行操作了
     
