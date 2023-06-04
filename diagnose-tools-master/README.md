@@ -2,11 +2,11 @@
 
 1､快速上手
 
-  建议在 Centos 7.5/7.6 版本中进行实验。
+  建议在 Linux 5.19 内核版本中进行实验。
 
   第一步、使用如下命令clone代码：
 
-    git clone https://github.com/alibaba/diagnose-tools.git
+    git clone https://gitlab.eduxiji.net/202311664111382/project1466467-176202.git
     
   第二步、在diagnose-tools目录中运行如下命令初始化编译环境：
   
