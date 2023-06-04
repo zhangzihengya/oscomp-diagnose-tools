@@ -82,7 +82,7 @@ diagnose-tools flame --input=tmp.txt --output=perf.svg
 ```
 该命令指定了数据来源文件为tmp.txt，并指定火焰图文件为perf.svg。成功后，可以使用浏览器直接打开perf.svg。如下所示：
 
-![](https://gitee.com/nan-shuaibo/image/raw/master/202306042158129.png)
+![](./images/pupil-perf.png)
 
 你可以在浏览器中与火焰图互动：将鼠标移到不同层级的块中，看其详细信息，也可以点击块。
 
@@ -109,5 +109,5 @@ sudo diagnose-tools task-info --image
 sudo diagnose-tools task-info --report_image
 ```
 
-运行结果：![image-20230604215220224](https://gitee.com/nan-shuaibo/image/raw/master/202306042152216.png)
+运行结果：![image-20230604215220224](task_info.jpg)
 
