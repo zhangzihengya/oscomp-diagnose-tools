@@ -81,8 +81,7 @@ sys-delay / irq-delay / load-monitor / perf等功能都能够输出进程堆栈�
 diagnose-tools flame --input=tmp.txt --output=perf.svg
 ```
 该命令指定了数据来源文件为tmp.txt，并指定火焰图文件为perf.svg。成功后，可以使用浏览器直接打开perf.svg。如下所示：
-
-![](./images/pupil-perf.png)
+<div align="center"><img src = "./images/pupil-perf.png"></div>
 
 你可以在浏览器中与火焰图互动：将鼠标移到不同层级的块中，看其详细信息，也可以点击块。
 
@@ -109,5 +108,5 @@ sudo diagnose-tools task-info --image
 sudo diagnose-tools task-info --report_image
 ```
 
-运行结果：![image-20230604215220224](task_info.jpg)
+运行结果：<div align="center"><img src = "./images/task_info.jpg"></div>
 
