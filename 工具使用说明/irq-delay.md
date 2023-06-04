@@ -130,7 +130,7 @@ diagnose-tools flame --input=irq-delay.log --output=irq-delay.svg
 
 该命令将生成的火焰图保存到irq-delay.svg中，使用浏览器打开如下所示：
 
-<div align="center"><img src = "./images/irq-delay火焰图.png"></div>
+<div align="center"><img src = "https://gitlab.eduxiji.net/202311664111382/project1466467-176202/-/raw/main/%E5%B7%A5%E5%85%B7%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E/images/irq-delay%E7%81%AB%E7%84%B0%E5%9B%BE.png"></div>
 
 ### 关闭功能
 
