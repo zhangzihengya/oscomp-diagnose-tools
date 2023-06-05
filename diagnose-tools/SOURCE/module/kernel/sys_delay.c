@@ -38,7 +38,7 @@
 #include "pub/kprobe.h"
 
 #include "uapi/sys_delay.h"
-#define lb_info printk("dt in: %s %d",__func__,__LINE__);
+
 static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
 
 struct diag_sys_delay_settings sys_delay_settings = {
@@ -47,7 +47,6 @@ struct diag_sys_delay_settings sys_delay_settings = {
 
 static unsigned int sys_delay_alloced;
 static struct kprobe kprobe_kvm_check_async_pf_completion;
-static struct kprobe kprobe___cond_resched;
 
 static struct diag_variant_buffer sys_delay_variant_buffer;
 static struct mm_tree mm_tree;
@@ -72,7 +71,28 @@ static inline void update_sched_time(void)
 	local_irq_restore(flags);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,12,0)
+DEFINE_ORIG_FUNC(int, _cond_resched, 1, void *, x);
 
+static void (*orig___cond_resched)(void);
+static inline int should_resched(void)
+{
+	return need_resched() && !(preempt_count() & PREEMPT_ACTIVE);
+}
+
+int new__cond_resched(void *x)
+{
+	update_sched_time();
+
+	if (should_resched()) {
+		atomic64_inc_return(&diag_nr_running);
+		orig___cond_resched();
+		atomic64_dec_return(&diag_nr_running);
+		return 1;
+	}
+	return 0;
+}
+#else
 #include <linux/preempt.h>
 
 #ifndef preempt_disable_notrace
@@ -87,13 +107,73 @@ static inline void preempt_latency_start(int val) { }
 static inline void preempt_latency_stop(int val) { }
 static void (*orig___schedule)(bool preempt);
 
+DEFINE_ORIG_FUNC(int, _cond_resched, 1, void *, x);
+
+static void preempt_schedule_common(void)
+{
+	do {
+		/*
+		 * Because the function tracer can trace preempt_count_sub()
+		 * and it also uses preempt_enable/disable_notrace(), if
+		 * NEED_RESCHED is set, the preempt_enable_notrace() called
+		 * by the function tracer will call this function again and
+		 * cause infinite recursion.
+		 *
+		 * Preemption must be disabled here before the function
+		 * tracer can trace. Break up preempt_disable() into two
+		 * calls. One to disable preemption without fear of being
+		 * traced. The other to still record the preemption latency,
+		 * which can also be traced by the function tracer.
+		 */
+		preempt_disable_notrace();
+		preempt_latency_start(1);
+		orig___schedule(true);
+		preempt_latency_stop(1);
+		preempt_enable_no_resched_notrace();
+
+		/*
+		 * Check again in case we missed a preemption opportunity
+		 * between schedule and now.
+		 */
+	} while (need_resched());
+}
+
+int new__cond_resched(void *x)
+{
+	update_sched_time();
+
+#if KERNEL_VERSION(4, 9, 151) <= LINUX_VERSION_CODE && KERNEL_VERSION(4, 10, 10) >= LINUX_VERSION_CODE
+	current->cond_resched++;
+#endif
+	if (should_resched(0)) {
+		atomic64_inc_return(&diag_nr_running);
+		preempt_schedule_common();
+		atomic64_dec_return(&diag_nr_running);
+		return 1;
+	}
+	return 0;
+}
+#endif
+
+#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
 static void trace_sched_switch_hit(void *__data, bool preempt,
 		struct task_struct *prev, struct task_struct *next)
+#elif KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE
+static void trace_sched_switch_hit(void *__data,
+		struct task_struct *prev, struct task_struct *next)
+#else
+static void trace_sched_switch_hit(struct rq *rq, struct task_struct *prev,
+		struct task_struct *next)
+#endif
 {
 	update_sched_time();
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
+static void trace_sys_enter_hit(struct pt_regs *regs, long id)
+#else
 static void trace_sys_enter_hit(void *__data, struct pt_regs *regs, long id)
+#endif
 {
 	update_sched_time();
 }
@@ -148,15 +228,24 @@ void syscall_timer(struct diag_percpu_context *context)
 	}
 }
 
+#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
 __maybe_unused static void trace_sched_process_exec_hit(void *__data,
 	struct task_struct *tsk,
 	pid_t old_pid,
 	struct linux_binprm *bprm)
+#elif KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE
+__maybe_unused static void trace_sched_process_exec_hit(void *__data,
+	struct task_struct *tsk,
+	pid_t old_pid,
+	struct linux_binprm *bprm)
+#endif
+#if KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE
 {
 	atomic64_inc_return(&diag_nr_running);
 	diag_hook_exec(bprm, &mm_tree);
 	atomic64_dec_return(&diag_nr_running);
 }
+#endif
 
 #if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
 static void trace_sched_process_exit_hit(void *__data, struct task_struct *tsk)
@@ -207,11 +296,6 @@ static int kprobe_kvm_check_async_pf_completion_pre(struct kprobe *p, struct pt_
 	return 0;
 }
 
-static int kprobe___cond_resched_pre(struct kprobe *p, struct pt_regs *regs){
-	update_sched_time();
-	return 0;
-}
-
 static int __activate_sys_delay(void)
 {
 	int ret = 0;
@@ -223,7 +307,7 @@ static int __activate_sys_delay(void)
 		goto out_variant_buffer;
 	sys_delay_alloced = 1;
 
-	// JUMP_CHECK(__cond_resched);
+	JUMP_CHECK(_cond_resched);
 
 	msleep(10);
 
@@ -240,8 +324,13 @@ static int __activate_sys_delay(void)
 #endif
 		hook_tracepoint("sched_process_exit", trace_sched_process_exit_hit, NULL);
 	}
-	hook_kprobe(&kprobe___cond_resched, "__cond_resched",
-				kprobe___cond_resched_pre, NULL);
+	//get_argv_processes(&mm_tree);
+
+	get_online_cpus();
+	mutex_lock(orig_text_mutex);
+	JUMP_INSTALL(_cond_resched);
+	mutex_unlock(orig_text_mutex);
+	put_online_cpus();
 
 	return 1;
 out_variant_buffer:
@@ -265,7 +354,6 @@ static void __deactivate_sys_delay(void)
 	unhook_tracepoint("kvm_entry", trace_kvm_entry_hit, NULL);
 	unhook_tracepoint("kvm_exit", trace_kvm_exit_hit, NULL);
 	unhook_kprobe(&kprobe_kvm_check_async_pf_completion);
-	unhook_kprobe(&kprobe___cond_resched);
 
 	if (sys_delay_settings.style == 1) {
 #if KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE
@@ -273,6 +361,12 @@ static void __deactivate_sys_delay(void)
 #endif
 		unhook_tracepoint("sched_process_exit", trace_sched_process_exit_hit, NULL);
 	}
+
+	get_online_cpus();
+	mutex_lock(orig_text_mutex);
+	JUMP_REMOVE(_cond_resched);
+	mutex_unlock(orig_text_mutex);
+	put_online_cpus();
 
 	synchronize_sched();
 	msleep(10);
@@ -413,6 +507,7 @@ long diag_ioctl_sys_delay(unsigned int cmd, unsigned long arg)
 
 static int lookup_syms(void)
 {
+	LOOKUP_SYMS(_cond_resched);
 #if KERNEL_VERSION(4, 4, 0) <= LINUX_VERSION_CODE
 	LOOKUP_SYMS(__schedule);
 #else
@@ -422,12 +517,18 @@ static int lookup_syms(void)
 	return 0;
 }
 
+static void jump_init(void)
+{
+	JUMP_INIT(_cond_resched);
+}
+
 int diag_sys_delay_init(void)
 {
 	if (lookup_syms())
 		return -EINVAL;
 
 	init_diag_variant_buffer(&sys_delay_variant_buffer, 1 * 1024 * 1024);
+	jump_init();
 	init_mm_tree(&mm_tree);
 
 	if (sys_delay_settings.activated)
