@@ -42,10 +42,12 @@
 #include "pub/variant_buffer.h"
 #include "pub/kprobe.h"
 #include "pub/fs_utils.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#include "pub/trace_point.h"
+#endif
 
 #include "uapi/exit_monitor.h"
 
-static BLOCKING_NOTIFIER_HEAD(task_exit_notifier);
 static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
 struct diag_exit_monitor_settings exit_monitor_settings;
 
@@ -151,20 +153,26 @@ static int hook_sched_process_exit(struct task_struct *p)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
 static int
 task_exit_notify(struct notifier_block *self, unsigned long val, void *data)
+#else
+static void trace_sys_exit_hit(void *__data, struct pt_regs *regs, long ret)
+#endif
 {
 	atomic64_inc_return(&diag_nr_running);
 	hook_sched_process_exit(current);
 	atomic64_dec_return(&diag_nr_running);
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
 	return 0;
+#endif
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
 static struct notifier_block task_exit_nb = {
 	.notifier_call	= task_exit_notify,
 };
-
+#endif
 static int __activate_exit_monitor(void)
 {
 	int ret = 0;
@@ -173,7 +181,11 @@ static int __activate_exit_monitor(void)
 	if (ret)
 		goto out_variant_buffer;
 	exec_monitor_alloced = 1;
-	blocking_notifier_chain_register(&task_exit_notifier, &task_exit_nb);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+	profile_event_register(PROFILE_TASK_EXIT, &task_exit_nb);
+#else	
+	hook_tracepoint("sys_exit", trace_sys_exit_hit, NULL);
+#endif
 	exit_monitor_event_id++;
 	return 1;
 out_variant_buffer:
@@ -190,7 +202,11 @@ int activate_exit_monitor(void)
 
 static void __deactivate_exit_monitor(void)
 {
-	blocking_notifier_chain_unregister(&task_exit_notifier, &task_exit_nb);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
+	profile_event_unregister(PROFILE_TASK_EXIT, &task_exit_nb);
+#else
+	unhook_tracepoint("sys_exit", trace_sys_exit_hit, NULL);
+#endif
 
 	synchronize_sched();
 	msleep(10);
