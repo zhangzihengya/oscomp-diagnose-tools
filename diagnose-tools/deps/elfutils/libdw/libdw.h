@@ -1058,7 +1058,7 @@ extern int dwarf_frame_cfa (Dwarf_Frame *frame, Dwarf_Op **ops, size_t *nops)
    expressions in the CFI, *OPS is an internal pointer that can be used as
    long as the Dwarf_CFI used to create FRAME remains alive.  */
 extern int dwarf_frame_register (Dwarf_Frame *frame, int regno,
-				 Dwarf_Op ops_mem[3],
+				 Dwarf_Op *ops_mem,
 				 Dwarf_Op **ops, size_t *nops)
   __nonnull_attribute__ (3, 4, 5);
 
