@@ -9,6 +9,11 @@
  *
  */
 
+#include <linux/sched/signal.h>
+#include <linux/sched/loadavg.h>
+#include <linux/mm.h>
+#include <linux/sched/mm.h>
+#include <linux/math64.h>
 #include <linux/hrtimer.h>
 #include <linux/kernel.h>
 #include <linux/kallsyms.h>
@@ -1087,6 +1092,92 @@ static int get_task_info(int nid)
 	return ret;
 }
 
+static int get_task_image(void)
+{
+	static struct pupil_task_image_detail detail;
+	static struct pupil_task_image tsk_image;
+	struct task_struct *task;
+    u64 cpu_time,exist_time;
+    int cpu_ratio;
+    struct mm_struct *mm;
+    unsigned long total_memory,rss_pages;
+    int mem_ratio;
+    u64 total_char,rwfreq;
+	unsigned long flags;
+	int maxcpu=50,maxmem=50,maxrw=10;
+	int ret;
+
+	ret = alloc_diag_variant_buffer(&pupil_variant_buffer);
+	if (ret)
+		return -ENOMEM;
+	pupil_alloced = 1;
+
+    msleep(10);
+
+	detail.et_type = et_pupil_task_image_detail;
+	do_diag_gettimeofday(&detail.tv);
+	detail.load1 = LOAD_INT(avenrun[0]);
+	detail.load11 = LOAD_FRAC(avenrun[0]);
+    detail.load2 = LOAD_INT(avenrun[1]);
+	detail.load22 = LOAD_FRAC(avenrun[1]);
+    detail.load3 = LOAD_INT(avenrun[2]);
+	detail.load33 = LOAD_FRAC(avenrun[2]);
+    
+	rcu_read_lock();
+	
+	diag_variant_buffer_spin_lock(&pupil_variant_buffer, flags);
+	diag_variant_buffer_reserve(&pupil_variant_buffer, sizeof(struct pupil_task_image_detail));
+	diag_variant_buffer_write_nolock(&pupil_variant_buffer, &detail, sizeof(struct pupil_task_image_detail));
+	diag_variant_buffer_seal(&pupil_variant_buffer);
+	diag_variant_buffer_spin_unlock(&pupil_variant_buffer, flags);
+
+    for_each_process(task) {
+        cpu_time = task->utime + task->stime; 
+        exist_time = ktime_get_ns() - task->start_time;
+        cpu_ratio = (cpu_time * 100) / exist_time;
+
+        mm = get_task_mm(task);
+        if(mm){
+            total_memory = totalram_pages();
+            rss_pages = get_mm_rss(mm);
+            mem_ratio = (rss_pages * 100) / total_memory;
+        }else{
+            mem_ratio=0;
+        }
+
+        total_char = task->ioac.rchar + task->ioac.wchar;
+        total_char = div_u64(total_char, USEC_PER_SEC);
+        exist_time = div_u64(exist_time, NSEC_PER_SEC);
+        if(exist_time==0){
+            rwfreq = total_char;
+        }else{
+            rwfreq = total_char/exist_time;
+        }
+        
+        if((cpu_ratio>=maxcpu) || (mem_ratio>=maxmem) || (rwfreq >= maxrw))
+        {
+            tsk_image.et_type = et_pupil_task_image;
+			tsk_image.pid = task->pid;
+			strncpy(tsk_image.comm, task->comm, TASK_COMM_LEN);
+			tsk_image.comm[TASK_COMM_LEN - 1] = 0;
+			tsk_image.cpu_ratio = cpu_ratio;
+			tsk_image.mem_ratio = mem_ratio;
+			tsk_image.rwfreq = rwfreq;
+
+			diag_variant_buffer_spin_lock(&pupil_variant_buffer, flags);
+			diag_variant_buffer_reserve(&pupil_variant_buffer,
+				sizeof(struct pupil_task_image));
+			diag_variant_buffer_write_nolock(&pupil_variant_buffer,
+				&tsk_image, sizeof(struct pupil_task_image));
+			diag_variant_buffer_seal(&pupil_variant_buffer);
+			diag_variant_buffer_spin_unlock(&pupil_variant_buffer, flags);
+        }
+    }
+    rcu_read_unlock();
+
+	return ret;
+}
+
 int pupil_syscall(struct pt_regs *regs, long id)
 {
 	int ret = 0;
@@ -1111,6 +1202,9 @@ int pupil_syscall(struct pt_regs *regs, long id)
 	case DIAG_PUPIL_TASK_PID:
 		pid = (unsigned int)SYSCALL_PARAM1(regs);
 		ret = get_task_info(pid);
+		break;
+	case DIAG_PUPIL_TASK_IMAGE:
+		ret = get_task_image();
 		break;
 	default:
 		ret = -ENOSYS;
@@ -1143,6 +1237,9 @@ long diag_ioctl_pupil_task(unsigned int cmd, unsigned long arg)
 		if (!ret) {
 			ret = get_task_info(id);
 		}
+		break;
+	case CMD_PUPIL_TASK_IMAGE:
+		ret = get_task_image();
 		break;
 	default:
 		ret = -ENOSYS;

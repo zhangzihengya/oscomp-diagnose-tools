@@ -22,17 +22,24 @@ else
 endif
 
 devel:
+	/bin/cp -f SOURCE/diagnose-tools/plot/plot.py  /usr/bin/
 ifneq ($(findstring Ubuntu,$(UNAME_A) $(shell test -e /etc/os-release && head -1 /etc/os-release)),)
-	#apt update
+	apt update
 	apt -y install gcc
 	apt -y install g++
-	apt -y install libunwind8-dev
+	# apt -y install libunwind8-dev
+	apt -y install libunwind-dev
+	apt -y install flex bison libgcrypt20-dev pkg-config
 	apt -y install elfutils
 	apt -y install libelf-dev
 	apt -y install rpm
 	apt -y install alien
 	apt -y install bash-completion # git自动补全
 	apt -y install --no-install-recommends openjdk-8-jdk
+	apt -y install python3
+	apt -y install python3-pip
+	pip3 install numpy scipy matplotlib  --target /usr/lib/python3/dist-packages -i https://pypi.mirrors.ustc.edu.cn/simple/ --quiet
+	
 else
 	yum install -y gcc
 	yum install -y gcc-c++
@@ -74,7 +81,7 @@ module:
 	cd SOURCE/module; make --jobs=${JOBS}
 	mkdir -p build/lib/`uname -r`/
 	/bin/cp -f SOURCE/module/diagnose.ko build/lib/`uname -r`/
-
+ 
 tools:
 	cd SOURCE/diagnose-tools; make clean; VENDER_LDFLAGS="-static -L${DEPS}/lib -L${DEPS}/elfutils/libdwfl/" make --jobs=${JOBS}
 
@@ -110,9 +117,11 @@ clean:
 	cd SOURCE/diagnose-tools; rm -f testcase/pi/*.o testcase/memcpy/*.o testcase/md5/*.o testcase/run_trace/*.o
 	cd SOURCE/diagnose-tools; make -C java_agent clean
 	sh ./vender/clean.sh
+	rm -rf /usr/bin/plot.py
 
 distclean:
 	cd SOURCE/diagnose-tools; rm -f $(TARGET) *.o libperfmap.so
 	cd SOURCE/diagnose-tools; rm -f testcase/pi/*.o testcase/memcpy/*.o testcase/md5/*.o testcase/run_trace/*.o
 	cd SOURCE/diagnose-tools; make -C java_agent clean
 	sh ./vender/distclean.sh
+	rm -rf /usr/bin/plot.py

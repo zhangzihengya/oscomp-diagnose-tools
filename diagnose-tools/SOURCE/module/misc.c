@@ -90,6 +90,7 @@ int need_dump(int delay_threshold_ms, u64 *max_delay_ms, u64 base)
 	return ret;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,8,0)
 static char *bdevt_str(dev_t devt, char *buf)
 {
 	if (MAJOR(devt) <= 0xff && MINOR(devt) <= 0xff) {
@@ -101,6 +102,7 @@ static char *bdevt_str(dev_t devt, char *buf)
 
 	return buf;
 }
+#endif
 
 /*
  * print a full list of all partitions - intended for places where the root
@@ -590,7 +592,7 @@ void diag_task_brief(struct task_struct *tsk, struct diag_task_detail *detail)
 
 	detail->pid = tsk->pid;
 	detail->tgid = tsk->tgid;
-	detail->state = tsk->state;
+	detail->state = tsk->__state;
 	detail->task_type = diag_get_task_type(tsk);
 	ns = task_active_pid_ns(tsk);
 	if (ns && ns != &init_pid_ns) {

@@ -12,7 +12,7 @@
 #include "pub/cgroup.h"
 #include "../symbol.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0) || LINUX_VERSION_CODE > KERNEL_VERSION(5,16,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
 struct cgroup * cpuacct_to_cgroup(struct cpuacct *acct)
 {
 	return NULL;

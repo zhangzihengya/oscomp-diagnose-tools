@@ -241,16 +241,18 @@ static void diag_memcg_build_inode_stats(struct mem_cgroup *memcg,
 
 	for (pgdat = orig_first_online_pgdat(); pgdat;
 	     pgdat = orig_next_online_pgdat(pgdat)) {
-		struct mem_cgroup_per_node *mz;
 		struct page *page, *n;
 		struct lruvec *lruvec;
 		enum lru_list lru;
-
-		mz = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
+		// get the lru list vector for a memcg & node
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,13,0)
+		struct mem_cgroup_per_node *mz = mem_cgroup_nodeinfo(memcg, pgdat->node_id);
 		if (!mz)
 			continue;
-
 		lruvec = &mz->lruvec;
+#else
+		lruvec = mem_cgroup_lruvec(memcg, pgdat);
+#endif
 		for_each_lru(lru) {
 			struct list_head *list = &lruvec->lists[lru];
 

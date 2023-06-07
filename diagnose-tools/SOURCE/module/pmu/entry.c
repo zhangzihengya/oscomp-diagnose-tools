@@ -46,9 +46,9 @@ int diag_pmu_init(void)
 	return 0;
 }
 
-int diag_pmu_exit(void)
+void diag_pmu_exit(void)
 {
-	return 0;
+	return;
 }
 
 #else
@@ -491,7 +491,9 @@ static int pmu_lookup_syms(void)
 
 	return 0;
 }
-
+/// @brief perf初始化
+/// @param  
+/// @return 
 int diag_pmu_init(void)
 {
 	int ret;

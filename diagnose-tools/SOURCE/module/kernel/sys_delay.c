@@ -38,7 +38,6 @@
 #include "pub/kprobe.h"
 
 #include "uapi/sys_delay.h"
-
 static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
 
 struct diag_sys_delay_settings sys_delay_settings = {
@@ -47,6 +46,9 @@ struct diag_sys_delay_settings sys_delay_settings = {
 
 static unsigned int sys_delay_alloced;
 static struct kprobe kprobe_kvm_check_async_pf_completion;
+#if KERNEL_VERSION(5, 10, 0) < LINUX_VERSION_CODE
+static struct kprobe kprobe___cond_resched;
+#endif
 
 static struct diag_variant_buffer sys_delay_variant_buffer;
 static struct mm_tree mm_tree;
@@ -103,10 +105,10 @@ int new__cond_resched(void *x)
 #define preempt_enable_notrace()		barrier()
 #endif
 
+#if KERNEL_VERSION(5, 11, 0) > LINUX_VERSION_CODE
 static inline void preempt_latency_start(int val) { }
 static inline void preempt_latency_stop(int val) { }
 static void (*orig___schedule)(bool preempt);
-
 DEFINE_ORIG_FUNC(int, _cond_resched, 1, void *, x);
 
 static void preempt_schedule_common(void)
@@ -145,6 +147,7 @@ int new__cond_resched(void *x)
 #if KERNEL_VERSION(4, 9, 151) <= LINUX_VERSION_CODE && KERNEL_VERSION(4, 10, 10) >= LINUX_VERSION_CODE
 	current->cond_resched++;
 #endif
+
 	if (should_resched(0)) {
 		atomic64_inc_return(&diag_nr_running);
 		preempt_schedule_common();
@@ -153,6 +156,7 @@ int new__cond_resched(void *x)
 	}
 	return 0;
 }
+#endif
 #endif
 
 #if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
@@ -296,6 +300,13 @@ static int kprobe_kvm_check_async_pf_completion_pre(struct kprobe *p, struct pt_
 	return 0;
 }
 
+#if KERNEL_VERSION(5, 10, 0) < LINUX_VERSION_CODE
+static int kprobe___cond_resched_pre(struct kprobe *p, struct pt_regs *regs){
+	update_sched_time();
+	return 0;
+}
+#endif
+
 static int __activate_sys_delay(void)
 {
 	int ret = 0;
@@ -306,8 +317,9 @@ static int __activate_sys_delay(void)
 	if (ret)
 		goto out_variant_buffer;
 	sys_delay_alloced = 1;
-
+#if KERNEL_VERSION(4, 20, 0) > LINUX_VERSION_CODE
 	JUMP_CHECK(_cond_resched);
+#endif
 
 	msleep(10);
 
@@ -325,12 +337,16 @@ static int __activate_sys_delay(void)
 		hook_tracepoint("sched_process_exit", trace_sched_process_exit_hit, NULL);
 	}
 	//get_argv_processes(&mm_tree);
-
+#if KERNEL_VERSION(5, 11, 0) > LINUX_VERSION_CODE
 	get_online_cpus();
 	mutex_lock(orig_text_mutex);
 	JUMP_INSTALL(_cond_resched);
 	mutex_unlock(orig_text_mutex);
 	put_online_cpus();
+#else
+	hook_kprobe(&kprobe___cond_resched, "__cond_resched",
+				kprobe___cond_resched_pre, NULL);
+#endif
 
 	return 1;
 out_variant_buffer:
@@ -362,11 +378,15 @@ static void __deactivate_sys_delay(void)
 		unhook_tracepoint("sched_process_exit", trace_sched_process_exit_hit, NULL);
 	}
 
+#if KERNEL_VERSION(5, 11, 0) > LINUX_VERSION_CODE
 	get_online_cpus();
 	mutex_lock(orig_text_mutex);
 	JUMP_REMOVE(_cond_resched);
 	mutex_unlock(orig_text_mutex);
 	put_online_cpus();
+#else
+	unhook_kprobe(&kprobe___cond_resched);
+#endif
 
 	synchronize_sched();
 	msleep(10);
@@ -507,20 +527,24 @@ long diag_ioctl_sys_delay(unsigned int cmd, unsigned long arg)
 
 static int lookup_syms(void)
 {
+#if KERNEL_VERSION(5, 11, 0) > LINUX_VERSION_CODE
 	LOOKUP_SYMS(_cond_resched);
 #if KERNEL_VERSION(4, 4, 0) <= LINUX_VERSION_CODE
 	LOOKUP_SYMS(__schedule);
 #else
 	LOOKUP_SYMS(__cond_resched);
 #endif
+#endif
 
 	return 0;
 }
 
+#if KERNEL_VERSION(5, 11, 0) > LINUX_VERSION_CODE
 static void jump_init(void)
 {
 	JUMP_INIT(_cond_resched);
 }
+#endif
 
 int diag_sys_delay_init(void)
 {
@@ -528,7 +552,9 @@ int diag_sys_delay_init(void)
 		return -EINVAL;
 
 	init_diag_variant_buffer(&sys_delay_variant_buffer, 1 * 1024 * 1024);
+#if KERNEL_VERSION(5, 11, 0) > LINUX_VERSION_CODE
 	jump_init();
+#endif
 	init_mm_tree(&mm_tree);
 
 	if (sys_delay_settings.activated)

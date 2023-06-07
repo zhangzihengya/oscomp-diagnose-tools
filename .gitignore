@@ -1,0 +1,6 @@
+!*.c
+!*.cc
+!Makefile
+!*.h
+!*.sh
+!*.py

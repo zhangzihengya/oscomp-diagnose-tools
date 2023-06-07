@@ -32,6 +32,8 @@ struct diag_load_monitor_settings {
 	unsigned int threshold_load_r;
 	unsigned int threshold_load_d;
 	unsigned int threshold_task_d;
+	unsigned int trend;
+	unsigned int time;
 };
 
 struct load_monitor_task {
@@ -75,6 +77,8 @@ struct load_monitor_detail {
 	unsigned int load_d_5_2;
 	unsigned int load_d_15_1;
 	unsigned int load_d_15_2;
+	char bad_time[128];
+	char init_load[128];
 };
 
 #define CMD_LOAD_MONITOR_SET (0)

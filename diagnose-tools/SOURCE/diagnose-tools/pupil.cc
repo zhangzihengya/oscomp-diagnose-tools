@@ -36,6 +36,8 @@ void usage_pupil(void)
 	printf("    task-info dump task-info\n");
 	printf("        --help task-info help info\n");
 	printf("        --pid thread id intend to dump\n");
+	printf("        --image find abnormal process\n");
+	printf("            report-image\n");
 }
 
 static void do_pid(char *arg)
@@ -59,6 +61,18 @@ static void do_pid(char *arg)
 	if (ret) {
 		printf("	获取线程信息错误： %d\n", ret);
 	}
+}
+
+static void do_image(void)
+{
+	int ret;
+
+	ret=diag_call_ioctl_request(DIAG_IOCTL_PUPIL_TASK_IMAGE);
+
+	if (ret) {
+		printf("	打印进程映像信息错误： %d\n", ret);
+	}
+
 }
 
 static int task_info_extract(void *buf, unsigned int len, void *)
@@ -113,9 +127,50 @@ static int task_info_extract(void *buf, unsigned int len, void *)
 	return 0;
 }
 
+static int task_info_extract_image(void *buf, unsigned int len, void *)
+{
+	int *et_type;
+	struct pupil_task_image_detail *detail;
+	struct pupil_task_image *task_image;
+	static int seq = 0;
+
+	if (len == 0)
+		return 0;
+
+	et_type = (int *)buf;
+	switch (*et_type) {
+	case et_pupil_task_image_detail:
+		if (len < sizeof(struct pupil_task_image_detail))
+			break;
+		detail = (struct pupil_task_image_detail *)buf;
+		printf("时间：[%lu:%lu]\n",
+					detail->tv.tv_sec, detail->tv.tv_usec);
+		printf("Load: %lu.%02lu, %lu.%02lu, %lu.%02lu\n",
+			detail->load1,detail->load11,detail->load2,detail->load22,detail->load3,detail->load33);
+		break;
+	case et_pupil_task_image:
+		if (len < sizeof(struct pupil_task_image))
+			break;
+		task_image = (struct pupil_task_image *)buf;
+		printf("PID:%-6d  comm:%-16s  cpu_ratio:%-3d%%     mem_ratio:%-3d%%     rwfreq:%lluMB/s\n",
+			task_image->pid,task_image->comm,task_image->cpu_ratio,task_image->mem_ratio,task_image->rwfreq);
+		task_image++;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static void do_extract(char *buf, int len)
 {
 	extract_variant_buffer(buf, len, task_info_extract, NULL);
+}
+
+static void do_extract_image(char *buf, int len)
+{
+	extract_variant_buffer(buf, len, task_info_extract_image, NULL);
 }
 
 static void do_dump(const char *arg)
@@ -146,12 +201,42 @@ static void do_dump(const char *arg)
 	}
 }
 
+static void do_dump_image(const char *arg)
+{
+	static char variant_buf[5 * 1024 * 1024];
+	int len;
+	int ret = 0;
+	struct params_parser parse(arg);
+	struct diag_ioctl_dump_param dump_param = {
+		.user_ptr_len = &len,
+		.user_buf_len = 5 * 1024 * 1024,
+		.user_buf = variant_buf,
+	};
+
+	report_reverse = parse.int_value("reverse");
+	report_raw_stack = parse.int_value("raw-stack");
+
+	memset(variant_buf, 0, 5 * 1024 * 1024);
+	if (run_in_host) {
+		ret = diag_call_ioctl(DIAG_IOCTL_PUPIL_TASK_DUMP, (long)&dump_param);
+	} else {
+		ret = -ENOSYS;
+		syscall(DIAG_PUPIL_TASK_DUMP, &ret, &len, variant_buf, 5 * 1024 * 1024);
+	}
+
+	if (ret == 0) {
+		do_extract_image(variant_buf, len);
+	}
+}
+
 int pupil_task_info(int argc, char *argv[])
 {
 	static const struct option long_options[] = {
 			{"help",     no_argument, 0,  0 },
 			{"report",     optional_argument, 0,  0 },
 			{"pid",     required_argument, 0,  0 },
+			{"image",     no_argument, 0,  0 },
+			{"report_image",     optional_argument, 0,  0 },
 			{0,         0,                 0,  0 }
 		};
 	int c;
@@ -178,6 +263,12 @@ int pupil_task_info(int argc, char *argv[])
 			break;
 		case 2:
 			do_pid(optarg);
+			break;
+		case 3:
+			do_image();
+			break;
+		case 4:
+			do_dump_image(optarg ? optarg : "");
 			break;
 		default:
 			usage_pupil();

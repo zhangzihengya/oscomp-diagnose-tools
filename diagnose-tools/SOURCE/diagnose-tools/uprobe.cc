@@ -59,6 +59,21 @@ void usage_uprobe(void)
 	printf("        --params set params info.\n");
 }
 
+void print_settings(struct diag_uprobe_settings *settings) {
+	if(settings->tgid) printf("    进程ID：%d\n", settings->tgid);
+	if(settings->pid) printf("    线程ID：%d\n", settings->pid);
+	if(*settings->comm) printf("    进程名称：%s\n", settings->comm);
+	if(*settings->cpus) printf("    CPUS：%s\n", settings->cpus);
+	printf("    输出级别：%d\n", settings->verbose);
+	if(*settings->file_name) printf("    文件名：%s\n", settings->file_name);
+	printf("    偏移：%d\n", settings->offset);
+	if(*settings->params[0].param_name) printf("    参数1：%s\n", settings->params[0].param_name);
+	if(*settings->params[1].param_name) printf("    参数2：%s\n", settings->params[1].param_name);
+	if(*settings->params[2].param_name) printf("    参数3：%s\n", settings->params[2].param_name);
+	if(*settings->params[3].param_name) printf("    参数4：%s\n", settings->params[3].param_name);
+	if(*settings->params[4].param_name) printf("    参数5：%s\n", settings->params[4].param_name);
+}
+
 static void do_activate(const char *arg)
 {
 	struct params_parser parse(arg);
@@ -84,7 +99,7 @@ static void do_activate(const char *arg)
 		printf("can not open %s\n", str.c_str());
 		return;
 	}
-
+	memcpy(settings.file_name, str.c_str(), 255);
 	settings.fd = fd;
 	settings.offset = offset;
 	settings.verbose = parse.int_value("verbose");
@@ -103,60 +118,29 @@ static void do_activate(const char *arg)
 		settings.cpus[254] = 0;
 	}
 
-	param_name = parse.string_value("param1-name");
-	memcpy(settings.params[0].param_name, param_name.c_str(), 255);
-	settings.params[0].param_idx = parse.int_value("param1-index");
-	settings.params[0].type = parse.int_value("param1-type");
-	settings.params[0].size = parse.int_value("param1-size");
-
-	param_name = parse.string_value("param2-name");
-	memcpy(settings.params[1].param_name, param_name.c_str(), 255);
-	settings.params[1].param_idx = parse.int_value("param2-index");
-	settings.params[1].type = parse.int_value("param2-type");
-	settings.params[1].size = parse.int_value("param3-size");
-
-	param_name = parse.string_value("param3-name");
-	memcpy(settings.params[2].param_name, param_name.c_str(), 255);
-	settings.params[2].param_idx = parse.int_value("param3-index");
-	settings.params[2].type = parse.int_value("param3-type");
-	settings.params[2].size = parse.int_value("param3-size");
-
-	param_name = parse.string_value("param4-name");
-	memcpy(settings.params[3].param_name, param_name.c_str(), 255);
-	settings.params[3].param_idx = parse.int_value("param4-index");
-	settings.params[3].type = parse.int_value("param4-type");
-	settings.params[3].size = parse.int_value("param4-size");
-
-	param_name = parse.string_value("param5-name");
-	memcpy(settings.params[4].param_name, param_name.c_str(), 255);
-	settings.params[4].param_idx = parse.int_value("param5-index");
-	settings.params[4].type = parse.int_value("param5-type");
-	settings.params[4].size = parse.int_value("param5-size");
+	for(int i=0; i<5; i++) {
+		string N = to_string(i+1);
+		param_name = parse.string_value("param"+N+"-name");
+		memcpy(settings.params[i].param_name, param_name.c_str(), 255);
+		settings.params[i].param_idx = parse.int_value("param"+N+"-index");
+		settings.params[i].type = parse.int_value("param"+N+"-type");
+		settings.params[i].size = parse.int_value("param"+N+"-size");
+	}
 
 	if (run_in_host) {
-		ret = diag_call_ioctl(DIAG_IOCTL_UPROBE_SET,(long)&settings);
+		ret = diag_call_ioctl(DIAG_IOCTL_UPROBE_SET,(long)&settings); // SOURCE/module/kernel/uprobe.c 388
 	} else {
 		ret = -ENOSYS;
 		syscall(DIAG_UPROBE_SET, &ret, &settings, sizeof(struct diag_uprobe_settings));
 	}
 
 	printf("功能设置%s，返回值：%d\n", ret ? "失败" : "成功", ret);
-	printf("    进程ID：%d\n", settings.tgid);
-	printf("    线程ID：%d\n", settings.pid);
-	printf("    进程名称：%s\n", settings.comm);
-	printf("    CPUS：%s\n", settings.cpus);
-	printf("    输出级别：%d\n", settings.verbose);
-	printf("    文件名：%s\n", settings.file_name);
-	printf("    偏移：%d\n", settings.offset);
-	printf("    参数1：%s\n", settings.params[0].param_name);
-	printf("    参数2：%s\n", settings.params[1].param_name);
-	printf("    参数3：%s\n", settings.params[2].param_name);
-	printf("    参数4：%s\n", settings.params[3].param_name);
-	printf("    参数5：%s\n", settings.params[4].param_name);
+	print_settings(&settings);
+
 	if (ret)
 		return;
 
-	ret = diag_activate("uprobe");
+	ret = diag_activate("uprobe"); // SOURCE/module/entry.c 163
 	if (ret == 1) {
 		printf("uprobe activated\n");
 	} else {
@@ -225,18 +209,7 @@ static void do_settings(const char *arg)
 	if (ret == 0) {
 		printf("功能设置：\n");
 		printf("    是否激活：%s\n", settings.activated ? "√" : "×");
-		printf("    进程ID：%d\n", settings.tgid);
-		printf("    线程ID：%d\n", settings.pid);
-		printf("    进程名称：%s\n", settings.comm);
-		printf("    CPUS：%s\n", settings.cpus);
-		printf("    输出级别：%d\n", settings.verbose);
-		printf("    文件名：%s\n", settings.file_name);
-		printf("    偏移：%d\n", settings.offset);
-		printf("    参数1：%s\n", settings.params[0].param_name);
-		printf("    参数2：%s\n", settings.params[1].param_name);
-		printf("    参数3：%s\n", settings.params[2].param_name);
-		printf("    参数4：%s\n", settings.params[3].param_name);
-		printf("    参数5：%s\n", settings.params[4].param_name);
+		print_settings(&settings);
 	} else {
 		printf("获取uprobe设置失败，请确保正确安装了diagnose-tools工具\n");
 	}
@@ -271,6 +244,7 @@ static int uprobe_extract(void *buf, unsigned int len, void *)
     symbol sym;
     elf_file file;
 	static int seq = 0;
+	char now[40];
 
 	if (len == 0)
 		return 0;
@@ -281,18 +255,17 @@ static int uprobe_extract(void *buf, unsigned int len, void *)
 		if (len < sizeof(struct uprobe_detail))
 			break;
 		detail = (struct uprobe_detail *)buf;
-
-		printf("UPROBE命中：PID： %d[%s]，时间：[%lu:%lu]\n",
+		strftime(now,64,"%Y-%m-%d %H:%M:%S",localtime((time_t*)&detail->tv.tv_sec));
+		printf("UPROBE命中：PID： %d[%s]，时间：[%s:%lu]\n",
 			detail->task.pid, detail->task.comm,
-			detail->tv.tv_sec, detail->tv.tv_usec);
+			now, detail->tv.tv_usec);
 
 		seq++;
-		printf("##CGROUP:[%s]  %d      [%03d]  UPROBE命中，时间：[%lu:%lu]\n",
+		printf("##CGROUP:[%s]  %d      [%03d]  命中\n",
 				detail->task.cgroup_buf,
 				detail->task.pid,
-				seq,
-				detail->tv.tv_sec, detail->tv.tv_usec);
-#if 1
+				seq);
+#if 1		
 		diag_printf_user_stack(detail->task.tgid,
 				detail->task.container_tgid,
 				detail->task.comm,
@@ -317,17 +290,16 @@ static int uprobe_extract(void *buf, unsigned int len, void *)
 		if (len < sizeof(struct uprobe_raw_stack_detail))
 			break;
 		raw_detail = (struct uprobe_raw_stack_detail *)buf;
-
-		printf("UPROBE命中：PID： %d[%s]，时间：[%lu:%lu]\n",
+		strftime(now,64,"%Y-%m-%d %H:%M:%S",localtime((time_t*)&raw_detail->tv.tv_sec));
+		printf("UPROBE命中：PID： %d[%s]，时间：[%s:%lu]\n",
 			raw_detail->task.pid, raw_detail->task.comm,
-			raw_detail->tv.tv_sec, raw_detail->tv.tv_usec);
+			now, raw_detail->tv.tv_usec);
 
 		seq++;
-		printf("##CGROUP:[%s]  %d      [%03d]  UPROBE命中，时间：[%lu:%lu]\n",
+		printf("##CGROUP:[%s]  %d      [%03d]  命中\n",
 				raw_detail->task.cgroup_buf,
 				raw_detail->task.pid,
-				seq,
-				raw_detail->tv.tv_usec, raw_detail->tv.tv_usec);
+				seq);
 #if 0
 		diag_printf_user_stack(raw_detail->task.tgid,
 				raw_detail->task.container_tgid,
@@ -433,6 +405,7 @@ static void do_dump(void)
 	}
 
 	if (ret == 0 && len > 0) {
+		g_symbol_parser.user_symbol = true;
 		do_extract(variant_buf, len);
 	}
 }

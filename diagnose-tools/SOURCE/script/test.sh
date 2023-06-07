@@ -103,7 +103,7 @@ run_trace() {
 	TEST_END=$[$TEST_OFFSET+10]
 
 	eval "$DIAG_CMD test-run-trace --type=2 --count=10 &"
-	TEST_PID=`ps aux | grep diagnose-tools | grep test-run-trace | awk '{printf $2}'`
+	TEST_PID=`ps aux | grep diagnose-tools | grep test-run-trace -m 1 | awk '{printf $2}'`
 
 	eval "$DIAG_CMD run-trace --uprobe=\"tgid=$TEST_PID start-file=$DIAG_BINPATH start-offset=$TEST_OFFSET stop-file=$DIAG_BINPATH stop-offset=$TEST_END\" --activate=\"raw-stack=1\" --settings"
 	
@@ -150,6 +150,7 @@ EOF
 
         eval "$DIAG_CMD flame --input=kprobe.log --output=kprobe.svg"
         echo "火焰图位于kprobe.svg"
+	eval "$DIAG_CMD kprobe --deactivate"
 }
 
 uprobe() {
@@ -187,7 +188,8 @@ exit_monitor() {
 	eval "$DIAG_CMD exit-monitor --deactivate --activate='comm=diagnose-tools' --settings"
 	diagnose-tools exit-monitor --test
 	sleep .2
-	eval "$DIAG_CMD exit-monitor --report --deactivate" > exit_monitor.log
+	eval "$DIAG_CMD exit-monitor --deactivate"
+	eval "$DIAG_CMD exit-monitor --report" > exit_monitor.log
 }
 
 mutex_monitor() {

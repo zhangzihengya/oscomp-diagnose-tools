@@ -65,6 +65,7 @@ void (*orig___do_page_fault)(struct pt_regs *regs, unsigned long error_code,
                 unsigned long address);
 #endif
 
+struct file *(*orig_fget_task)(struct task_struct *task, unsigned int fd);
 struct class *orig_block_class;
 struct device_type *orig_disk_type;
 char *(*orig_disk_name)(struct gendisk *hd, int partno, char *buf);
@@ -166,12 +167,18 @@ static int lookup_syms(void)
         orig___do_page_fault = (void *)0xffffffff8106e940;
 #endif
 	//LOOKUP_SYMS(__do_page_fault);
+	LOOKUP_SYMS(fget_task);
 	LOOKUP_SYMS(block_class);
 	LOOKUP_SYMS(disk_type);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,8,0)
 	LOOKUP_SYMS(disk_name);
+	LOOKUP_SYMS(get_files_struct);
+	LOOKUP_SYMS_NORET(get_task_type);
+	LOOKUP_SYMS_NORET(cpuacct_subsys);
+	LOOKUP_SYMS_NORET(css_get_next);
+#endif
 	LOOKUP_SYMS(access_remote_vm);
 	LOOKUP_SYMS(idle_task);
-	LOOKUP_SYMS(get_files_struct);
 	LOOKUP_SYMS(put_files_struct);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
 	LOOKUP_SYMS(follow_page);
@@ -184,12 +191,9 @@ static int lookup_syms(void)
 	LOOKUP_SYMS_NORET(d_find_any_alias);
 	LOOKUP_SYMS_NORET(find_task_by_vpid);
 	LOOKUP_SYMS_NORET(find_task_by_pid_ns);
-	LOOKUP_SYMS_NORET(get_task_type);
 	LOOKUP_SYMS_NORET(kernfs_name);
 	LOOKUP_SYMS_NORET(root_cpuacct);
 	LOOKUP_SYMS_NORET(css_next_descendant_pre);
-	LOOKUP_SYMS_NORET(cpuacct_subsys);
-	LOOKUP_SYMS_NORET(css_get_next);
 #if !defined(DIAG_ARM64)
 	LOOKUP_SYMS_NORET(x86_pmu);
 #endif

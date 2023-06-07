@@ -53,6 +53,28 @@ err:
 	return ret;
 }
 
+static inline long diag_call_ioctl_request(unsigned long request)
+{
+	long ret = 0;
+	int fd;
+
+	fd = open("/dev/diagnose-tools", O_RDWR, 0);
+	if (fd < 0) {
+		printf("open /dev/diagnose-tools error!\n");
+		return -EEXIST;
+	}
+
+	ret = ioctl(fd, request);
+	if (ret < 0) {
+		printf("call cmd %lx fail, ret is %ld\n", request, ret);
+		goto err;
+	}
+
+err:
+	close(fd);
+
+	return ret;
+}
 extern unsigned long run_in_host;
 extern unsigned long debug_mode;
 #endif
@@ -370,6 +392,8 @@ enum diag_record_id {
 	et_pupil_dump_stack,
 	et_pupil_exist_pid,
 	et_pupil_exist_comm,
+	et_pupil_task_image_detail,
+	et_pupil_task_image,
 
 	et_alloc_load_base = et_pupil_base + DIAG_EVENT_TYPE_INTERVAL,
 	et_alloc_load_summary,

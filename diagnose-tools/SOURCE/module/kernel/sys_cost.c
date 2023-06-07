@@ -51,7 +51,6 @@
 
 #include "uapi/sys_cost.h"
 
-#if !defined(CENTOS_3_10_123_9_3)
 struct diag_sys_cost_settings sys_cost_settings;
 
 static unsigned int sys_cost_alloced;
@@ -199,7 +198,9 @@ static void trace_sys_exit_hit(void *__data, struct pt_regs *regs, long ret)
 {
 	stop_trace_syscall(current);
 }
-
+/// @brief  激活功能，统计时间单位为ns
+/// @param  
+/// @return 
 static int __activate_sys_cost(void)
 {
 	int ret;
@@ -408,4 +409,3 @@ void diag_sys_cost_exit(void)
 	msleep(20);
 	destroy_diag_variant_buffer(&sys_cost_variant_buffer);
 }
-#endif

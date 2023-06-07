@@ -53,6 +53,9 @@ void usage_load_monitor(void)
 	printf("            load.r threshold for load.r, default 500\n");
 	printf("            load.d threshold for load.d, default 100\n");
 	printf("            task.d threshold for task.d\n");
+	printf("            time Monitoring the time of load variation trends,default 0s\n");
+	printf("            	plot Plot the load trend\n");
+	printf("            	timeload View load values during the time\n");
 	printf("        --settings print settings.\n");
 	printf("        --deactivate\n");
 	printf("        --report dump log with text.\n");
@@ -75,6 +78,7 @@ static void do_activate(const char *arg)
 	settings.style = parse.int_value("style");
 	settings.mass = parse.int_value("mass");
 	settings.cpu_run = parse.int_value("cpu.run");
+	settings.time = parse.int_value("time",0);
 
 	if (run_in_host) {
 		ret = diag_call_ioctl(DIAG_IOCTL_LOAD_MONITOR_SET, (long)&settings);
@@ -91,6 +95,7 @@ static void do_activate(const char *arg)
 	printf("    输出级别：\t%d\n", settings.verbose);
 	printf("    STYLE：\t%d\n", settings.style);
 	printf("    MASS:\t%d\n", settings.mass);
+	printf("    time:\t%d\n", settings.time);
 	if (ret)
 		return;
 
@@ -142,6 +147,8 @@ static void do_settings(const char *arg)
 			printf("    输出级别：\t%d\n", settings.verbose);
 			printf("    STYLE：\t%d\n", settings.style);
 			printf("    MASS:\t%d\n", settings.mass);
+			printf("    time:\t%d\n", settings.time);
+
 		}
 		else
 		{
@@ -152,6 +159,7 @@ static void do_settings(const char *arg)
 			root["Task.D"] = Json::Value(settings.threshold_task_d);
 			root["verbose"] = Json::Value(settings.verbose);
 			root["STYLE"] = Json::Value(settings.style);
+			root["time"] = Json::Value(settings.time);
 		}
 	} else {
 		if ( 1 != enable_json)
@@ -193,6 +201,9 @@ static int load_monitor_extract(void *buf, unsigned int len, void *)
 		if (len < sizeof(struct load_monitor_detail))
 			break;
 		detail = (struct load_monitor_detail *)buf;
+
+	    printf("load异常时间点：%s\tload值：%s",
+					detail->bad_time, detail->init_load);
 
 		printf("Load飙高：[%lu:%lu]\n",
 					detail->tv.tv_sec, detail->tv.tv_usec);
@@ -410,6 +421,8 @@ static int json_extract(void *buf, unsigned int len, void *)
 		root["type"] = "summary";
 		root["tv_sec"] = Json::Value(detail->tv.tv_sec);
 		root["tv_usec"] = Json::Value(detail->tv.tv_usec);
+		root["bad_time"] = Json::Value(detail->bad_time);
+		root["init_load"] = Json::Value(detail->init_load);
 
 		std::cout << "#$" << fast_writer.write(root);
 		break;
@@ -508,7 +521,12 @@ static void do_sls(char *arg)
 		sleep(10);
 	}
 }
-
+static void do_line_plot(){
+	system("python3 /usr/bin/plot.py");
+}
+static void time_load(){
+	system("cat /proc/load_trend");
+}
 int load_monitor_main(int argc, char **argv)
 {
 	static struct option long_options[] = {
@@ -518,6 +536,8 @@ int load_monitor_main(int argc, char **argv)
 			{"settings",     optional_argument, 0,  0 },
 			{"report",     optional_argument, 0,  0 },
 			{"log",     required_argument, 0,  0 },
+			{"plot", 	no_argument, 	0,	 0},
+			{"timeload",	no_argument	,	0,	0},
 			{0,         0,                 0,  0 }
 		};
 	int c;
@@ -551,6 +571,12 @@ int load_monitor_main(int argc, char **argv)
 			break;
 		case 5:
 			do_sls(optarg);
+			break;
+		case 6:
+			do_line_plot();
+			break;
+		case 7:
+			time_load();
 			break;
 		default:
 			usage_load_monitor();

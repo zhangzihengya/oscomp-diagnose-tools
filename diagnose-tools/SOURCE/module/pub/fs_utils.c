@@ -152,13 +152,18 @@ void *for_each_files_task(struct task_struct *tsk,
 		goto out_no_task;
 
 	get_task_struct(tsk);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 	files = orig_get_files_struct(tsk);
 	if (!files)
 		goto out;
-
+#endif
 	rcu_read_lock();
 	for (fd = 0; fd < files_fdtable(files)->max_fds; fd++) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 		file = fcheck_files(files, fd);
+#else
+		file = orig_fget_task(tsk, fd);
+#endif
 		if (!file)
 			continue;
 
@@ -168,7 +173,9 @@ void *for_each_files_task(struct task_struct *tsk,
 			break;
 	}
 	rcu_read_unlock();
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 	orig_put_files_struct(files);
+#endif
 
 	mm = get_task_mm(tsk);
 	if (mm) {

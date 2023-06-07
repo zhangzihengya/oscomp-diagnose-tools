@@ -58,7 +58,7 @@ void (*orig_armpmu_read)(struct perf_event *event) = NULL;
 u64 (*orig_x86_perf_event_update)(struct perf_event *event) = NULL;
 #endif
 
-static struct perf_event_attr pmu_attrs[PMU_INDEX_MAX] =
+static struct perf_event_attr pmu_attrs[PMU_INDEX_MAX] = // perf跟踪事件属性
 {
 	[PMU_INDEX_CYCLES] = {
 		.type           = PERF_TYPE_HARDWARE,
@@ -253,7 +253,7 @@ static int pmu_destroy_counter(unsigned int cpu)
 }
 
 static struct perf_event *pmu_create_perf_event(struct perf_event_attr *attr,
-		int cpu)
+		int cpu) // 开始计数
 {
 	struct perf_event *event;
 
@@ -276,6 +276,13 @@ err_out:
 	return NULL;
 }
 
+/// @brief 创建并开始perf性能事件
+/// @param conf 要替换的事件
+/// @param replace_config 是否替换事件
+/// @param cpu 要采样的cpu
+/// @param attr 原本的perf事件结构体
+/// @param event perf事件
+/// @return 
 static int _pmu_create_counter(int conf, int replace_config, int cpu,
 		struct perf_event_attr *attr, struct perf_event **event)
 {
@@ -347,10 +354,18 @@ void pmu_destroy_all_events(void)
 {
 	unsigned int cpu;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 	for_each_online_cpu(cpu)
 		pmu_destroy_counter(cpu);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 }
 
 int pmu_create_all_events(void)
@@ -358,17 +373,28 @@ int pmu_create_all_events(void)
 	int cpu;
 	int ret;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 
 	for_each_online_cpu(cpu) {
 		ret = pmu_create_core_events(cpu);
 		if (ret) {
-			put_online_cpus();
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
+			get_online_cpus();
+#else
+			cpus_read_lock();
+#endif
 			goto err_out;
 		}
 	}
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 
 	return 0;
 
@@ -544,7 +570,11 @@ static void dump_pmu_all(void)
 		return;
 
 	atomic64_inc_return(&pmu_nr_running);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 
 	for_each_online_cpu(cpu)
 		queue_work_on(cpu, system_wq, per_cpu_ptr(&dump_pmu_works, cpu));
@@ -552,7 +582,11 @@ static void dump_pmu_all(void)
 	for_each_online_cpu(cpu)
 		flush_work(per_cpu_ptr(&dump_pmu_works, cpu));
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 	atomic64_dec_return(&pmu_nr_running);
 }
 

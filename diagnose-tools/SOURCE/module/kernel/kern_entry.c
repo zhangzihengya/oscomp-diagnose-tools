@@ -62,7 +62,7 @@ static enum hrtimer_restart hrtimer_handler(struct hrtimer *hrtimer)
 
 	if (diag_timer_period > 0 && diag_timer_period < 100)
 		timer_sampling_period_ms = diag_timer_period;
-	expected = now + timer_sampling_period_ms * 1000 * 1000;
+	expected = now + timer_sampling_period_ms * 1000 * 1000; // 下次启动的期望时间点（ns）
 	context->timer_info.timer_expected_time = expected;
 	hrtimer_forward_now(hrtimer, __ms_to_ktime(timer_sampling_period_ms));
 
@@ -84,7 +84,7 @@ static void start_timer(void *info)
 	timer->function = hrtimer_handler;
 	context->timer_info.timer_started = 1;
 	context->timer_info.timer_expected_time =
-		sched_clock() + timer_sampling_period_ms * 1000 * 1000;
+		sched_clock() + timer_sampling_period_ms * 1000 * 1000; // 10ms之后允许dump
 	hrtimer_start_range_ns(timer,
 			__ms_to_ktime(timer_sampling_period_ms),
 			0,

@@ -66,8 +66,11 @@ static struct diag_trace_file *to_trace_file(struct file *file)
 #else
 	if (!file->f_inode)
 		return NULL;
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
 	return PDE_DATA(file->f_inode);
+#else
+	return pde_data(file->f_inode);
+#endif
 #endif
 }
 

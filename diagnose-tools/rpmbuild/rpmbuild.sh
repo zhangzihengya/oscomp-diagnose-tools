@@ -44,7 +44,7 @@ mkdir -p \$RPM_BUILD_ROOT/usr/bin/
 /bin/cp -rf $BASE/../SOURCE/script/get_sys_call.sh \$RPM_BUILD_ROOT/usr/diagnose-tools/
 /bin/cp -rf $BASE/../SOURCE/script/test.sh \$RPM_BUILD_ROOT/usr/diagnose-tools/
 /bin/cp -rf $BASE/../SOURCE/script/flame-graph/ \$RPM_BUILD_ROOT/usr/diagnose-tools/
-/bin/cp -rf $BASE/../documents/usage.docx \$RPM_BUILD_ROOT/usr/diagnose-tools/usage.docx
+/bin/cp -rf $BASE/../../工具使用说明/ \$RPM_BUILD_ROOT/usr/diagnose-tools/
 
 %clean
 rm -rf \$RPM_BUILD_ROOT

@@ -63,6 +63,7 @@ extern void
 (*orig___do_page_fault)(struct pt_regs *regs, unsigned long error_code,
 		unsigned long address);
 #endif
+extern struct file *(*orig_fget_task)(struct task_struct *task, unsigned int fd);
 extern struct task_struct *(*orig_find_task_by_vpid)(pid_t nr);
 extern struct task_struct *(*orig_find_task_by_pid_ns)(pid_t nr, struct pid_namespace *ns);
 extern struct task_struct *(*orig_idle_task)(int cpu);
