@@ -245,7 +245,7 @@ extern ssize_t ebl_register_info (Ebl *ebl,
    Each of these is filled with the DWARF register number corresponding,
    or -1 if there is none.  Returns zero when the information is available.  */
 extern int ebl_syscall_abi (Ebl *ebl, int *sp, int *pc,
-			    int *callno, int args[6]);
+			    int *callno, int *args);
 
 /* Supply the ABI-specified state of DWARF CFI before CIE initial programs.
 
