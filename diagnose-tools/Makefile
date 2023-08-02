@@ -36,6 +36,7 @@ ifneq ($(findstring Ubuntu,$(UNAME_A) $(shell test -e /etc/os-release && head -1
 	apt -y install alien
 	apt -y install bash-completion # git自动补全
 	apt -y install --no-install-recommends openjdk-8-jdk
+	apt -y install iputils-ping
 	apt -y install python3
 	apt -y install python3-pip
 	pip3 install numpy scipy matplotlib  --target /usr/lib/python3/dist-packages -i https://pypi.mirrors.ustc.edu.cn/simple/ --quiet
