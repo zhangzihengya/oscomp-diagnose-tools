@@ -37,6 +37,7 @@
 #include <linux/stop_machine.h>
 
 #include <asm/thread_info.h>
+#include <linux/hashtable.h>
 
 #include "internal.h"
 #include "mm_tree.h"
@@ -46,60 +47,46 @@
 
 #include "uapi/sched_delay.h"
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32)  && !defined(UBUNTU_1604) \
-	&& LINUX_VERSION_CODE <= KERNEL_VERSION(5, 11, 0) && !defined(ALIOS_5000_003)
+#define STAMP_BITS 8
+#define STAMP_SIZE (1 << STAMP_BITS)
+static struct hlist_head ht[STAMP_SIZE];
+struct stamp {int pid; unsigned long long time; struct hlist_node node;};
 
-#if defined(ALIOS_5000)
-static unsigned long *get_last_queued_addr(struct task_struct *p)
+static struct stamp *find_stamp(struct task_struct *p)
 {
-	return &p->ali_diag_reserved1;
+	struct stamp *t;
+	hash_for_each_possible(ht, t, node, hash_long(p->pid, STAMP_BITS)) {
+        if (t->pid == p->pid) return t;
+    }
+    return NULL;
 }
 
-#elif defined(ALIOS_4000)
-static unsigned long *get_last_queued_addr(struct task_struct *p)
-{
-	/**
-	 * task_stack_page, but not end_of_stack !!
-	 */
-	return task_stack_page(p) + sizeof(struct thread_info) + 32;
+static void clean_stamp(void) {
+	struct stamp *t;
+	struct hlist_node *tmp;
+	int i;
+	hash_for_each_safe(ht, i, tmp, t, node) {
+		hash_del(&t->node);
+		kfree(t);
+    }
 }
-#else
-#if  defined(CENTOS_8U)
-#define diag_last_queued rh_reserved2
-#elif defined(ALIOS_5000)
-#define diag_last_queued ali_diag_reserved3
-#elif KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
-#define diag_last_queued ali_reserved3
-#elif KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE
-#define diag_last_queued rh_reserved3
-#else
-#define diag_last_queued rh_reserved[0]
-#endif
 
-static unsigned long *get_last_queued_addr(struct task_struct *p)
-{
-	return &p->diag_last_queued;
+static unsigned long long read_last_queued(struct task_struct *p) {
+	struct stamp *t = find_stamp(p);
+	if(t) return t->time;
+	return 0;
 }
-#endif
-
-static unsigned long read_last_queued(struct task_struct *p)
+static void update_last_queued(struct task_struct *p, unsigned long long stamp)
 {
-	unsigned long *ptr = get_last_queued_addr(p);
-
-	if (ptr) {
-		return *ptr;
-	} else {
-		return 0;
+	struct stamp *t = find_stamp(p);
+	if(t) {
+		t->time = stamp;
+		return;
 	}
-}
-
-static void update_last_queued(struct task_struct *p, unsigned long stamp)
-{
-	unsigned long *ptr = get_last_queued_addr(p);
-
-	if (ptr) {
-		*ptr = stamp;
-	}
+	t = kmalloc(sizeof(struct stamp),GFP_ATOMIC);
+	t->pid = p->pid;
+	t->time = stamp;
+	hash_add(ht, &t->node, hash_long(t->pid, STAMP_BITS));
 }
 
 __maybe_unused static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
@@ -136,7 +123,6 @@ static void trace_sched_switch_hit(struct rq *rq, struct task_struct *prev,
 #endif
 {
 	unsigned long long t_queued;
-	unsigned long long delta = 0;
 	unsigned long long delta_ms;
 	unsigned long long now = ktime_to_ms(ktime_get());
 
@@ -157,14 +143,12 @@ static void trace_sched_switch_hit(struct rq *rq, struct task_struct *prev,
 	if (sched_delay_settings.pid && next->pid != sched_delay_settings.pid) {
 		return;
 	}
+	if(prev->__state==TASK_RUNNING) update_last_queued(prev, now);
 
-	t_queued = read_last_queued(next);
-	update_last_queued(next, 0);
-	if (t_queued <= 0)
-		return;
+	t_queued=read_last_queued(next);
+	if(!t_queued) return;
+	delta_ms = now - t_queued;
 
-	delta = now - t_queued;
-	delta_ms = delta;
 
 	if (delta_ms >= sched_delay_settings.threshold_ms) {
 		struct sched_delay_dither *dither;
@@ -203,10 +187,10 @@ static int __activate_sched_delay(void)
 	if (ret)
 		goto out_variant_buffer;
 	sched_delay_alloced = 1;
-
+	hash_init(ht);
 	hook_tracepoint("sched_switch", trace_sched_switch_hit, NULL);
 	hook_tracepoint("sched_wakeup", trace_sched_wakeup_hit, NULL);
-
+	hook_tracepoint("sched_wakeup_new", trace_sched_wakeup_hit, NULL);
 	return 1;
 out_variant_buffer:
 	return 0;
@@ -224,6 +208,7 @@ static void __deactivate_sched_delay(void)
 {
 	unhook_tracepoint("sched_switch", trace_sched_switch_hit, NULL);
 	unhook_tracepoint("sched_wakeup", trace_sched_wakeup_hit, NULL);
+	unhook_tracepoint("sched_wakeup_new", trace_sched_wakeup_hit, NULL);
 
 	msleep(20);
 	while (atomic64_read(&diag_nr_running) > 0)
@@ -393,17 +378,6 @@ void diag_sched_delay_exit(void)
     if (sched_delay_settings.activated)
         __deactivate_sched_delay();
     sched_delay_settings.activated = 0;
-
+	clean_stamp();
 	destroy_diag_variant_buffer(&sched_delay_variant_buffer);
 }
-#else
-int diag_sched_delay_init(void)
-{
-	return 0;
-}
-
-void diag_sched_delay_exit(void)
-{
-
-}
-#endif
