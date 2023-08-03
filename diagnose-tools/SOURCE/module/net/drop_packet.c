@@ -56,8 +56,8 @@
 
 #include "uapi/drop_packet.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0) && !defined(XBY_UBUNTU_1604) \
-	&& !defined(CENTOS_3_10_123_9_3) && !defined(UBUNTU_1604) && !defined(CENTOS_8U)
+// #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0) && !defined(XBY_UBUNTU_1604) \
+// 	&& !defined(CENTOS_3_10_123_9_3) && !defined(UBUNTU_1604) && !defined(CENTOS_8U)
 
 __maybe_unused static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
 struct diag_drop_packet_settings drop_packet_settings;
@@ -454,8 +454,11 @@ static inline bool ip_rcv_options(struct sk_buff *skb)
 				goto drop;
 			}
 		}
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
 		if (ip_options_rcv_srr(skb))
+#else
+		if (ip_options_rcv_srr(skb, dev))
+#endif
 			goto drop;
 	}
 
@@ -486,12 +489,14 @@ static int diag_ip_rcv_finish(struct net *net, struct sock *sk, struct sk_buff *
 		int protocol = iph->protocol;
 
 		ipprot = rcu_dereference(orig_inet_protos[protocol]);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0)
 		if (ipprot && ipprot->early_demux)
 		{
 			ipprot->early_demux(skb);
 			/* must reload iph, skb->head might have changed */
 			iph = ip_hdr(skb);
 		}
+#endif
 	}
 
 	/*
@@ -1735,7 +1740,11 @@ int __activate_drop_packet(void)
 	hook_kprobe(&kprobe_tcp_v4_rcv, "tcp_v4_rcv",
 				kprobe_tcp_v4_rcv_pre, NULL);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 	mutex_lock(orig_text_mutex);
 	JUMP_INSTALL(ip_local_deliver);
 	JUMP_INSTALL(ip_rcv);
@@ -1753,7 +1762,11 @@ int __activate_drop_packet(void)
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
 #endif
 	mutex_unlock(orig_text_mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 
 	return 1;
 out_variant_buffer:
@@ -1775,7 +1788,11 @@ void __deactivate_drop_packet(void)
 	unhook_kprobe(&kprobe_udp_rcv);
 	unhook_kprobe(&kprobe_tcp_v4_rcv);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 	mutex_lock(orig_text_mutex);
 	JUMP_REMOVE(ip_local_deliver);
 	JUMP_REMOVE(ip_rcv);
@@ -1793,7 +1810,11 @@ void __deactivate_drop_packet(void)
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
 #endif
 	mutex_unlock(orig_text_mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 
 	synchronize_sched();
 	msleep(20);
@@ -2037,14 +2058,14 @@ void diag_net_drop_packet_exit(void)
 
 	return;
 }
-#else
-int diag_net_drop_packet_init(void)
-{
-	return 0;
-}
+// #else
+// int diag_net_drop_packet_init(void)
+// {
+// 	return 0;
+// }
 
-void diag_net_drop_packet_exit(void)
-{
-	//
-}
-#endif
+// void diag_net_drop_packet_exit(void)
+// {
+// 	//
+// }
+// #endif
