@@ -46,10 +46,10 @@ sys_cost() {
 }
 
 sched_delay() {
-        eval "$DIAG_CMD sched-delay --deactivate --activate --settings"
+        eval "$DIAG_CMD sched-delay --deactivate --activate="threshold=10" --settings"
         sleep 1
-        eval "$DIAG_CMD sched-delay --report" > sched_delay.log
         eval "$DIAG_CMD sched-delay --deactivate"
+        eval "$DIAG_CMD sched-delay --report" > sched_delay.log
 }
 
 irq_delay() {
