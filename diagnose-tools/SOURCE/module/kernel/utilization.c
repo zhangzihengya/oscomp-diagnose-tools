@@ -32,6 +32,7 @@
 #include <linux/sched/mm.h>
 #endif
 #include <asm/irq_regs.h>
+#include <linux/hashtable.h>
 
 #include "internal.h"
 #include "mm_tree.h"
@@ -42,21 +43,48 @@
 
 #include "uapi/utilization.h"
 
-#if !defined(ALIOS_7U) || defined(ALIOS_4000)
-/**
- * 只支持7u
- */
-#else
+// #if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
+// #define diag_record_stamp ali_reserved5
+// #define diag_exec ali_reserved6
+// #define diag_wild ali_reserved8
+// #elif KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE
+// #define diag_record_stamp rh_reserved5
+// #define diag_exec rh_reserved6
+// #define diag_wild rh_reserved8
+// #endif
 
-#if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
-#define diag_record_stamp ali_reserved5
-#define diag_exec ali_reserved6
-#define diag_wild ali_reserved8
-#elif KERNEL_VERSION(3, 10, 0) <= LINUX_VERSION_CODE
-#define diag_record_stamp rh_reserved5
-#define diag_exec rh_reserved6
-#define diag_wild rh_reserved8
-#endif
+#define STAMP_BITS 10
+#define STAMP_SIZE (1 << STAMP_BITS)
+static struct hlist_head ht[STAMP_SIZE];
+struct stamp {
+	int pid;
+	unsigned long long diag_record_stamp, diag_exec, diag_wild; 
+	struct hlist_node node;
+};
+
+static struct stamp *find_stamp(struct task_struct *p)
+{
+	struct stamp *t;
+	if(!p) return NULL;
+	hash_for_each_possible(ht, t, node, hash_long(p->pid, STAMP_BITS)) {
+        if (t->pid == p->pid) return t;
+    }
+	t = kmalloc(sizeof(struct stamp),GFP_ATOMIC);
+	t->diag_exec=t->diag_record_stamp=t->diag_wild=0;
+	t->pid=p->pid;
+	hash_add(ht, &t->node, hash_long(t->pid, STAMP_BITS));
+    return t;
+}
+
+static void clean_stamp(void) {
+	struct stamp *t;
+	struct hlist_node *tmp;
+	int i;
+	hash_for_each_safe(ht, i, tmp, t, node) {
+		hash_del(&t->node);
+		kfree(t);
+    }
+}
 
 static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
 struct diag_utilization_settings utilization_settings;
@@ -72,20 +100,6 @@ static DEFINE_PER_CPU(char [CGROUP_NAME_LEN], isolate_cgroup_name);
 static DEFINE_PER_CPU(struct cgroup *, isolate_cgroup_ptr);
 static struct diag_variant_buffer utilization_variant_buffer;
 
-static void __maybe_unused clean_data(void)
-{
-	struct task_struct *tsk;
-
-	rcu_read_lock();
-
-	for_each_process(tsk) {
-		tsk->diag_exec = 0;
-		tsk->diag_wild = 0;
-	}
-
-	rcu_read_unlock();
-}
-
 static void dump_task_info(struct task_struct *tsk)
 {
 	struct utilization_detail *detail;
@@ -93,6 +107,7 @@ static void dump_task_info(struct task_struct *tsk)
 	unsigned long exec = 0, pages = 0, wild = 0;
 	unsigned long size = 0, resident = 0, shared = 0, text = 0, data = 0;
 	struct mm_struct *mm;
+	struct stamp *t = find_stamp(tsk);
 
 	if (!utilization_settings.activated || !utilization_settings.sample) {
 		return;
@@ -109,8 +124,8 @@ static void dump_task_info(struct task_struct *tsk)
 		mmput(mm);
 	}
 
-	exec = xchg(&tsk->diag_exec, 0);
-	wild = xchg(&tsk->diag_wild, 0);
+	exec = t->diag_exec; t->diag_exec = 0;
+	wild = t->diag_wild; t->diag_wild = 0;
 	if (exec == 0 && pages == 0 && wild == 0)
 		return;
 
@@ -148,52 +163,54 @@ static void trace_sched_switch_hit(struct rq *rq, struct task_struct *prev,
 	u64 now;
 	struct task_struct *tsk;
 	int cpu = smp_processor_id();
+	struct stamp *prevt, *nextt, *t;
 	struct cgroup *isolate = per_cpu(isolate_cgroup_ptr, cpu);
 	now = sched_clock();
+	prevt=find_stamp(prev);
+	nextt=find_stamp(next);
 
 	if (!utilization_settings.activated || !utilization_settings.sample) {
-		prev->diag_record_stamp = next->diag_record_stamp = 0;
+		prevt->diag_record_stamp = nextt->diag_record_stamp = 0;
 		return;
 	}
 
 	if (cpumask_test_cpu(cpu, &utilization_cpumask)) {
-		tsk = prev;
-		if (tsk->diag_record_stamp) {
-			delta_ns = now - tsk->diag_record_stamp;
-			tsk->diag_record_stamp = 0;
+		if (prevt->diag_record_stamp) {
+			delta_ns = now - prevt->diag_record_stamp;
+			prevt->diag_record_stamp = 0;
 		}
 		if (delta_ns > 0) {
-			if (!thread_group_leader(tsk)) {
-				tsk = rcu_dereference(tsk->group_leader);
+			if (!thread_group_leader(prev)) {
+				tsk = rcu_dereference(prev->group_leader);
 			}
 
 			if (tsk) {
-				xadd(&tsk->diag_exec, delta_ns);
+				t=find_stamp(tsk);
+				t->diag_exec += delta_ns;
 			}
 		}
 	} else if (isolate) {
 		struct cgroup *cgroup;
 
-		tsk = prev;
-		cgroup = diag_cpuacct_cgroup_tsk(tsk);
+		cgroup = diag_cpuacct_cgroup_tsk(prev);
 		if (cgroup != isolate) {
-			if (tsk->diag_record_stamp) {
-				delta_ns = now - tsk->diag_record_stamp;
-				tsk->diag_record_stamp = 0;
+			if (prevt->diag_record_stamp) {
+				delta_ns = now - prevt->diag_record_stamp;
+				prevt->diag_record_stamp = 0;
 
-				if (!thread_group_leader(tsk)) {
-					tsk = rcu_dereference(tsk->group_leader);
+				if (!thread_group_leader(prev)) {
+					tsk = rcu_dereference(prev->group_leader);
 				}
 
 				if (tsk) {
-					xadd(&tsk->diag_wild, delta_ns);
+					t=find_stamp(tsk);
+					t->diag_wild+=delta_ns;
 				}
 			}
 		}
 	}
 
-	tsk = next;
-	tsk->diag_record_stamp = now;
+	nextt->diag_record_stamp = now;
 }
 
 #if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
@@ -204,9 +221,10 @@ static void trace_sched_process_fork_hit(void *__data, struct task_struct *paren
 static void trace_sched_process_fork_hit(struct task_struct *parent, struct task_struct *child)
 #endif
 {
-	child->diag_record_stamp = 0;
-	child->diag_exec = 0;
-	child->diag_wild = 0;
+	struct stamp *t = find_stamp(child);
+	t->diag_record_stamp = 0;
+	t->diag_exec = 0;
+	t->diag_wild = 0;
 }
 
 #if KERNEL_VERSION(4, 9, 0) <= LINUX_VERSION_CODE
@@ -254,9 +272,9 @@ void utilization_timer(struct diag_percpu_context *context)
 	u64 delta_ns = 0;
 	struct task_struct *tsk = current;
 	int cpu;
-
+	struct stamp *t = find_stamp(tsk);
 	if (!utilization_settings.activated || !utilization_settings.sample) {
-		tsk->diag_record_stamp = 0;
+		t->diag_record_stamp = 0;
 		return;
 	}
 
@@ -264,16 +282,16 @@ void utilization_timer(struct diag_percpu_context *context)
 	if (!cpumask_test_cpu(cpu, &utilization_cpumask))
 		return;
 
-	if (tsk->diag_record_stamp) {
+	if (t->diag_record_stamp) {
 		struct task_struct *leader;
-
-		delta_ns = now - tsk->diag_record_stamp;
+		delta_ns = now - t->diag_record_stamp;
 		leader = rcu_dereference(tsk->group_leader);
 		if (leader) {
-			xadd(&leader->diag_exec, delta_ns);
+			struct stamp *lt = find_stamp(leader);
+			lt->diag_exec+=delta_ns;
 		}
 	}
-	tsk->diag_record_stamp = now;
+	t->diag_record_stamp = now;
 }
 
 static int __activate_utilization(void)
@@ -284,8 +302,8 @@ static int __activate_utilization(void)
 	if (ret)
 		goto out_variant_buffer;
 	utilization_alloced = 1;
-
-	clean_data();
+	hash_init(ht);
+	clean_stamp();
 
 	hook_tracepoint("sched_switch", trace_sched_switch_hit, NULL);
 	hook_tracepoint("sched_process_fork", trace_sched_process_fork_hit, NULL);
@@ -334,7 +352,7 @@ static int __deactivate_utilization(void)
 		msleep(10);
 	}
 
-	clean_data();
+	clean_stamp();
 
 	return ret;
 }
@@ -563,7 +581,6 @@ void diag_utilization_exit(void)
 	if (utilization_settings.activated)
 		deactivate_utilization();
 	utilization_settings.activated = 0;
-
+	
 	destroy_diag_variant_buffer(&utilization_variant_buffer);
 }
-#endif
