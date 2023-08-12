@@ -12,13 +12,13 @@
     
   第二步、在diagnose-tools目录中运行如下命令初始化编译环境：
   
-    make devel        # 安装编译过程中需要的包
+    sudo make devel        # 安装编译过程中需要的包
     
     make deps         # 编译依赖库，目前主要是编译java agent，以支持用户态java符号表解析
     
   第三步、编译工具：
   
-    make
+    sudo make
     
     这一步实际上会完成rpm的安装，你也可以用如下命令分别完成相应的工作：
     
