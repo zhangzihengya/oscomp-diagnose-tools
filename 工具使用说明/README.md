@@ -9,15 +9,15 @@
   第一步、使用如下命令clone代码：
 
     git clone https://gitlab.eduxiji.net/202311664111382/project1466467-176202.git
-    
+
   第二步、在diagnose-tools目录中运行如下命令初始化编译环境：
-  
+
     sudo make devel        # 安装编译过程中需要的包
     
     make deps         # 编译依赖库，目前主要是编译java agent，以支持用户态java符号表解析
-    
+
   第三步、编译工具：
-  
+
     sudo make
     
     这一步实际上会完成rpm的安装，你也可以用如下命令分别完成相应的工作：
@@ -29,7 +29,7 @@
     make java_agent   # 编译java agent
     
     make pkg          # 制作rpm安装包
-    
+
 ## 安装和卸载KO
 
 在使用模块功能之前，需要用如下命令安装KO模块：
@@ -73,3 +73,6 @@ uninstalled successfully
 | alloc-top       | 统计内存分配数量，按序输出内存分配多的进程                   |
 | high-order      | 监控分配大内存的调用链                                       |
 | reboot          | 监控系统重启信息，打印出调用sys_reboot系统调用的进程名称以及进程链 |
+| sched_delay     | 监控系统调度延迟。找到引起调度延迟的进程。                   |
+| utilization     | 监控系统资源利用率，找到CPU被哪些野进程干扰，以及进程对内存的使用情况。 |
+| drop-packet     | 监控内核TCP/IP各个流程中的丢包。                             |
