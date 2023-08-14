@@ -152,7 +152,7 @@ static int task_info_extract_image(void *buf, unsigned int len, void *)
 		if (len < sizeof(struct pupil_task_image))
 			break;
 		task_image = (struct pupil_task_image *)buf;
-		printf("PID:%-6d  comm:%-16s  cpu_ratio:%-3d%%     mem_ratio:%-3d%%     rwfreq:%lluMB/s\n",
+		printf("PID:%-6d  comm:%-16s  cpu_ratio:%-3d%%     mem_ratio:%-3d%%     rwfreq:%dMB/s\n",
 			task_image->pid,task_image->comm,task_image->cpu_ratio,task_image->mem_ratio,task_image->rwfreq);
 		task_image++;
 		break;
