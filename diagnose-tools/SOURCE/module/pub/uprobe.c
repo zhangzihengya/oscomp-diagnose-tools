@@ -41,19 +41,17 @@ int hook_uprobe(int fd, loff_t offset, struct diag_uprobe *diag_uprobe)
 		goto out;
 
 	diag_uprobe->register_status = 0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,11,0)
 	struct files_struct *files;
 	files = orig_get_files_struct(current);
 	if (!files)
 		goto out;
-#endif
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 		file = fcheck_files(files, fd);
 #else
 		file = orig_fget_task(current, fd);
 #endif
 	if (!file)
-		goto out;
+		goto out_put;
 
 	if (file && file->f_path.dentry && file->f_path.dentry->d_inode) {
 		inode = file->f_path.dentry->d_inode;
@@ -68,15 +66,20 @@ int hook_uprobe(int fd, loff_t offset, struct diag_uprobe *diag_uprobe)
 				diag_uprobe->file_name,
 				diag_uprobe->offset,
 				diag_uprobe->inode);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,11,0)
 			fput(file);
+#else
+			orig_put_files_struct(files);
+#endif
 			return 0;
 		}
 	}
 
-out:
+out_put:
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 	orig_put_files_struct(files);
 #endif
+out:
 	return -ENOSYS;
 }
 
