@@ -59,6 +59,9 @@ static inline void __percpu_counter_add(struct percpu_counter *fbc,
 #include "pub/stack.h"
 #include "uapi/throttle_delay.h"
 #include "uapi/pmu.h"
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 14, 0)
+#define __state state
+#endif
 /**
  * 手工替换函数相关的宏
  */
