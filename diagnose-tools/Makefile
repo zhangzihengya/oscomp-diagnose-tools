@@ -1,4 +1,3 @@
-
 CWD = $(shell pwd)
 ARCH := $(shell uname -i)
 UNAME_A := $(shell uname -a)
@@ -39,7 +38,7 @@ ifneq ($(findstring Ubuntu,$(UNAME_A) $(shell test -e /etc/os-release && head -1
 	apt -y install iputils-ping
 	apt -y install python3
 	apt -y install python3-pip
-	pip3 install numpy scipy matplotlib  --target /usr/lib/python3/dist-packages -i https://pypi.mirrors.ustc.edu.cn/simple/ --quiet
+	pip3 install launchpadlib numpy scipy matplotlib  --target /usr/lib/python3/dist-packages -i https://pypi.mirrors.ustc.edu.cn/simple/ --quiet
 	
 else
 	yum install -y gcc
