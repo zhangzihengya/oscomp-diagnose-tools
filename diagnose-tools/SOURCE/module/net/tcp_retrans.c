@@ -186,18 +186,18 @@ __maybe_unused static struct diag_tcp_retrans *__find_alloc_desc(struct diag_tcp
 	return this;
 }
 
-#if !defined(CENTOS_3_10_862) && !defined(CENTOS_3_10_957) \
-	&& !defined(CENTOS_3_10_1062) && !defined(CENTOS_3_10_1127) \
-	&& !defined(ALIOS_7U)
-int diag_tcp_retrans_init(void)
-{
-	return 0;
-}
+// #if !defined(CENTOS_3_10_862) && !defined(CENTOS_3_10_957) \
+// 	&& !defined(CENTOS_3_10_1062) && !defined(CENTOS_3_10_1127) \
+// 	&& !defined(ALIOS_7U)
+// int diag_tcp_retrans_init(void)
+// {
+// 	return 0;
+// }
 
-void diag_tcp_retrans_exit(void)
-{
-}
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
+// void diag_tcp_retrans_exit(void)
+// {
+// }
+// #elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 3, 0)
 __maybe_unused static void trace_retransmit_synack(struct sock *sk, struct request_sock *req)
 {
 	unsigned long flags;
@@ -1372,4 +1372,4 @@ void diag_tcp_retrans_exit(void)
 
 	return;
 }
-#endif
+// #endif
