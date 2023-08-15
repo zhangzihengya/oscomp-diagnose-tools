@@ -80,7 +80,10 @@ out:
 
 struct diag_symbol_info {
     char *symbol;
-    int count;
+    union {
+		int count;
+		void *addr;
+	};
 };
 
 static inline int get_symbol_count_callback(void *data, const char *name,
@@ -105,5 +108,23 @@ int diag_get_symbol_count(char *symbol)
 	diag_kallsyms_on_each_symbol(get_symbol_count_callback, &info);
 
 	return info.count;
+}
+
+int get_symbol_orig_callback(void *data, const char *name,
+            struct module *mod, unsigned long addr) {
+	struct diag_symbol_info *info = data;
+	if(memcmp(info->symbol,name,strlen(info->symbol))==0){
+		info->addr=addr;
+		return 1;
+	}
+	return 0;
+}
+
+void *diag_get_symbol_orig(char *symbol) {
+	struct diag_symbol_info info;
+	info.symbol=symbol;
+	info.addr=0;
+	diag_kallsyms_on_each_symbol(get_symbol_orig_callback, &info);
+	return info.addr;
 }
 

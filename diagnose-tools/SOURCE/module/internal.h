@@ -68,7 +68,7 @@ static inline void __percpu_counter_add(struct percpu_counter *fbc,
 #define LOOKUP_SYMS(name) do {					\
 		orig_##name = (void *)diag_kallsyms_lookup_name(#name);		\
 		if (!orig_##name) {						\
-			pr_err("kallsyms_lookup_name: %s\n", #name);		\
+			pr_err("failed kallsyms_lookup_name: %s\n", #name);		\
 			return -EINVAL;						\
 		}								\
 	} while (0)
@@ -76,7 +76,15 @@ static inline void __percpu_counter_add(struct percpu_counter *fbc,
 #define LOOKUP_SYMS_NORET(name) do {							\
 		orig_##name = (void *)diag_kallsyms_lookup_name(#name);		\
 		if (!orig_##name)						\
-			pr_err("kallsyms_lookup_name: %s\n", #name);		\
+			pr_err("failed kallsyms_lookup_name: %s\n", #name);		\
+	} while (0)
+	
+#define LOOKUP_SYMS_ORIG(name) do {					\
+		orig_##name = (void *)diag_get_symbol_orig(#name);		\
+		if (!orig_##name) {						\
+			pr_err("failed get_symbol_orig: %s\n", #name);		\
+			return -EINVAL;						\
+		}								\
 	} while (0)
 
 #if defined(DIAG_ARM64)
@@ -186,6 +194,7 @@ extern void (*orig___flush_dcache_area)(void *addr, size_t len);
 #endif
 
 extern int diag_get_symbol_count(char *symbol);
+extern void *diag_get_symbol_orig(char *symbol);
 
 #define JUMP_CHECK(func)	\
 	do {					\

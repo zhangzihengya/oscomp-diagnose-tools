@@ -28,6 +28,11 @@
 #include <linux/time.h>
 #include <linux/version.h>
 #include <linux/net.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,12,0)
+// #include <net/gro.h>
+#endif
+
 #include <linux/ip.h>
 #include <linux/udp.h>
 #include <linux/tcp.h>
@@ -55,7 +60,7 @@
 #include "pub/kprobe.h"
 #include "uapi/ping_delay.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0) && !defined(XBY_UBUNTU_1604) \
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 20, 0) && !defined(XBY_UBUNTU_1604) \
 	&& !defined(CENTOS_3_10_123_9_3) && !defined(UBUNTU_1604) && !defined(CENTOS_8U)
 
 __maybe_unused static atomic64_t diag_nr_running = ATOMIC64_INIT(0);
@@ -458,6 +463,7 @@ static int ip_rcv_finish_core(struct net *net, struct sock *sk,
 		int protocol = iph->protocol;
 
 		ipprot = rcu_dereference(orig_inet_protos[protocol]);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0)
 		if (ipprot && (edemux = READ_ONCE(ipprot->early_demux))) {
 			err = edemux(skb);
 			if (unlikely(err))
@@ -465,6 +471,7 @@ static int ip_rcv_finish_core(struct net *net, struct sock *sk,
 			/* must reload iph, skb->head might have changed */
 			iph = ip_hdr(skb);
 		}
+#endif
 	}
 
 	/*
@@ -1159,9 +1166,63 @@ static int kprobe_napi_gro_receive_pre(struct kprobe *p, struct pt_regs *regs)
 }
 
 static struct list_head (*orig_offload_base);
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 DEFINE_ORIG_FUNC(int, napi_gro_complete, 1,
         struct sk_buff *, skb);
+#else
+struct napi_gro_cb {
+	void	*frag0;
+	unsigned int frag0_len;
+	int	data_offset;
+	u16	flush;
+	u16	flush_id;
+	u16	count;
+	u16	proto;
+	unsigned long age;
+#define NAPI_GRO_FREE             1
+#define NAPI_GRO_FREE_STOLEN_HEAD 2
+	struct_group(zeroed,
+		u16	gro_remcsum_start;
+		u8	same_flow:1;
+		u8	encap_mark:1;
+		u8	csum_valid:1;
+		u8	csum_cnt:3;
+		u8	free:2;
+		u8	is_ipv6:1;
+		u8	is_fou:1;
+		u8	is_atomic:1;
+		u8 recursion_counter:4;
+		u8	is_flist:1;
+	);
+	__wsum	csum;
+	struct sk_buff *last;
+};
+
+#define NAPI_GRO_CB(skb) ((struct napi_gro_cb *)(skb)->cb)
+DEFINE_ORIG_FUNC(void, napi_gro_complete, 2,
+        struct napi_struct *, napi , struct sk_buff *, skb);
+static int (*orig_ipv6_gro_complete)(struct sk_buff * skb, int nhoff);
+static void (*orig_netif_receive_skb_list_internal)(struct list_head *head);
+static int (*orig_inet_gro_complete)(struct sk_buff *skb, int nhoff);
+static int orig_gro_normal_batch;
+
+static inline void orig_gro_normal_list(struct napi_struct *napi)
+{
+	if (!napi->rx_count)
+		return;
+	orig_netif_receive_skb_list_internal(&napi->rx_list);
+	INIT_LIST_HEAD(&napi->rx_list);
+	napi->rx_count = 0;
+}
+static inline void orig_gro_normal_one(struct napi_struct *napi, struct sk_buff *skb, int segs)
+{
+	list_add_tail(&skb->list, &napi->rx_list);
+	napi->rx_count += segs;
+	if (napi->rx_count >= orig_gro_normal_batch)
+		orig_gro_normal_list(napi);
+}
+
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
 
@@ -1323,10 +1384,10 @@ static int diag_napi_gro_complete(struct sk_buff *skb)
     if (err) {
         WARN_ON(&ptype->list == head);
 
-	if (type == cpu_to_be16(ETH_P_IP)) {
-		struct iphdr *iphdr = (struct iphdr *)skb->data;
-		inspect_packet(skb, iphdr, PD_GRO_RECV_ERR);
-	}
+		if (type == cpu_to_be16(ETH_P_IP)) {
+			struct iphdr *iphdr = (struct iphdr *)skb->data;
+			inspect_packet(skb, iphdr, PD_GRO_RECV_ERR);
+		}
 
         kfree_skb(skb);
         return NET_RX_SUCCESS;
@@ -1335,9 +1396,53 @@ static int diag_napi_gro_complete(struct sk_buff *skb)
 out:
     return orig_netif_receive_skb_internal(skb);
 }
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5,20,0)
+static void diag_napi_gro_complete(struct napi_struct * napi, struct sk_buff *skb)
+{
+	struct packet_offload *ptype;
+	__be16 type = skb->protocol;
+	struct list_head *head = orig_offload_base;
+	int err = -ENOENT;
+
+	BUILD_BUG_ON(sizeof(struct napi_gro_cb) > sizeof(skb->cb));
+
+	if (NAPI_GRO_CB(skb)->count == 1) {
+		skb_shinfo(skb)->gso_size = 0;
+		goto out;
+	}
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(ptype, head, list) {
+		if (ptype->type != type || !ptype->callbacks.gro_complete)
+			continue;
+
+		err = INDIRECT_CALL_INET(ptype->callbacks.gro_complete,
+					 orig_ipv6_gro_complete, orig_inet_gro_complete,
+					 skb, 0);
+		break;
+	}
+	rcu_read_unlock();
+
+	if (err) {
+		WARN_ON(&ptype->list == head);
+
+		if (type == cpu_to_be16(ETH_P_IP)) {
+			struct iphdr *iphdr = (struct iphdr *)skb->data;
+			inspect_packet(skb, iphdr, PD_GRO_RECV_ERR);
+		}
+
+		kfree_skb(skb);
+		return;
+	}
+
+out:
+	orig_gro_normal_one(napi, skb, NAPI_GRO_CB(skb)->count);
+}
+
 
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,20,0)
 static int new_napi_gro_complete(struct sk_buff *skb)
 {
 	int ret;
@@ -1348,6 +1453,14 @@ static int new_napi_gro_complete(struct sk_buff *skb)
 
 	return ret;
 }
+#elif LINUX_VERSION_CODE > KERNEL_VERSION(5,4,0)
+static void new_napi_gro_complete(struct napi_struct * napi, struct sk_buff *skb)
+{
+	atomic64_inc_return(&diag_nr_running);
+	diag_napi_gro_complete(napi, skb);
+	atomic64_dec_return(&diag_nr_running);
+}
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33)
 
@@ -1487,22 +1600,22 @@ static int new___netif_receive_skb(struct sk_buff *skb)
 	return ret;
 }
 
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 20, 0)
 
 static int (*orig___netif_receive_skb_one_core)(struct sk_buff *skb, bool pfmemalloc);
 DEFINE_ORIG_FUNC(int, __netif_receive_skb, 1, struct sk_buff *, skb);
 
-static inline unsigned int memalloc_noreclaim_save(void)
-{
-	unsigned int flags = current->flags & PF_MEMALLOC;
-	current->flags |= PF_MEMALLOC;
-	return flags;
-}
+// static inline unsigned int memalloc_noreclaim_save(void)
+// {
+// 	unsigned int flags = current->flags & PF_MEMALLOC;
+// 	current->flags |= PF_MEMALLOC;
+// 	return flags;
+// }
 
-static inline void memalloc_noreclaim_restore(unsigned int flags)
-{
-	current->flags = (current->flags & ~PF_MEMALLOC) | flags;
-}
+// static inline void memalloc_noreclaim_restore(unsigned int flags)
+// {
+// 	current->flags = (current->flags & ~PF_MEMALLOC) | flags;
+// }
 
 static int diag___netif_receive_skb(struct sk_buff *skb)
 {
@@ -1678,7 +1791,11 @@ static int __activate_ping_delay(void)
 	hook_tracepoint("softirq_entry", trace_softirq_entry_hit, NULL);
 	hook_tracepoint("softirq_exit", trace_softirq_exit_hit, NULL);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 	mutex_lock(orig_text_mutex);
 	JUMP_INSTALL(ip_local_deliver);
 	JUMP_INSTALL(ip_rcv_finish);
@@ -1689,7 +1806,11 @@ static int __activate_ping_delay(void)
 	JUMP_INSTALL(__netif_receive_skb);
 #endif
 	mutex_unlock(orig_text_mutex);
+	#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 
 	return 1;
 
@@ -1718,7 +1839,11 @@ static void __deactivate_ping_delay(void)
 	unhook_tracepoint("softirq_entry", trace_softirq_entry_hit, NULL);
 	unhook_tracepoint("softirq_exit", trace_softirq_exit_hit, NULL);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	get_online_cpus();
+#else
+	cpus_read_lock();
+#endif
 	mutex_lock(orig_text_mutex);
 	JUMP_REMOVE(ip_local_deliver);
 	JUMP_REMOVE(ip_rcv_finish);
@@ -1729,7 +1854,11 @@ static void __deactivate_ping_delay(void)
 	JUMP_REMOVE(__netif_receive_skb);
 #endif
 	mutex_unlock(orig_text_mutex);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,15,0)
 	put_online_cpus();
+#else
+	cpus_read_unlock();
+#endif
 
 	msleep(20);
 	while (atomic64_read(&diag_nr_running) > 0)
@@ -1763,7 +1892,7 @@ static int lookup_syms(void)
 	LOOKUP_SYMS(ip_rcv_finish);
 	LOOKUP_SYMS(ip_local_deliver_finish);
 	LOOKUP_SYMS(ip_local_deliver);
-	LOOKUP_SYMS(napi_gro_complete);
+	LOOKUP_SYMS_ORIG(napi_gro_complete);
 	LOOKUP_SYMS(__netif_receive_skb);
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 32)
 	LOOKUP_SYMS(ip_options_rcv_srr);
@@ -1779,10 +1908,17 @@ static int lookup_syms(void)
 	LOOKUP_SYMS(offload_base);
 	LOOKUP_SYMS(netif_receive_skb_internal);
 	LOOKUP_SYMS(__netif_receive_skb_core);
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
 	LOOKUP_SYMS(offload_base);
 	LOOKUP_SYMS(netif_receive_skb_internal);
 	LOOKUP_SYMS(__netif_receive_skb_one_core);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 20, 0)
+	LOOKUP_SYMS(offload_base);
+	LOOKUP_SYMS(__netif_receive_skb_one_core);
+	LOOKUP_SYMS(gro_normal_batch);
+	LOOKUP_SYMS(inet_gro_complete);
+	LOOKUP_SYMS(netif_receive_skb_list_internal);
+	LOOKUP_SYMS(ipv6_gro_complete);
 #endif
 	LOOKUP_SYMS(softirq_vec);
 	return 0;
