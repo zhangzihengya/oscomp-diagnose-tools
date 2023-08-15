@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# author: luiyanbing@foxmail.com
+# author: 刘冰 <luiyanbing@foxmail.com>
 #
-# Makefile
+# a simple implementation of load-monitor of diagnose-tools in ebpf bcc
 
 from time import time, sleep, strftime
 from signal import signal, SIG_IGN
