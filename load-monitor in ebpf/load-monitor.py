@@ -19,15 +19,18 @@
 from time import time, sleep, strftime
 from signal import signal, SIG_IGN
 
-
+# 将本进程提升到最高普通优先级
 def nice_1():
     from os import nice
     nice(-20)
 
+
 nice_1()
 
+# 数据暂存路径，保存到内存文件系统中，提高存储性能
 mem_path = "/dev/shm/load_monitor_tex.pkl"
 
+# 参数解析
 def get_args():
     from argparse import ArgumentParser, ArgumentTypeError, RawDescriptionHelpFormatter
     # arguments
@@ -64,14 +67,16 @@ def get_args():
 
 args = get_args()
 
-
+# 火焰图绘制
+# tex: flamegraph.pl支持的栈数据格式的文本
 def save_fla(tex):
     from subprocess import Popen, PIPE
-    p = Popen("flamegraph.pl > stack.svg", shell=True, stdin=PIPE)
+    p = Popen("../diagnose-tools/SOURCE/script/flame-graph/flamegraph.pl > stack.svg", shell=True, stdin=PIPE)
     p.stdin.write(tex.encode())
     p.stdin.close()
     p.wait()
 
+# 若设置了report选项，则直接输出记录的数据，不监控
 if args.report:
     with open(mem_path, "r") as file:
         print(file.read())
@@ -82,6 +87,7 @@ if args.report:
     remove(mem_path)
     exit()
 
+# ebpf内核态程序代码
 code = """
 #include <linux/sched.h>
 #define LOAD_LIMIT LOAD_LIMIT_THRESHOLD
@@ -115,6 +121,7 @@ void do_stack(struct pt_regs *ctx) {
 }
 """
 
+# 获取平均负载在内核中的地址 并 设置到ebpf内核态程序的代码中
 def get_load(code):
     from subprocess import Popen, PIPE
     p = Popen("sudo cat /proc/kallsyms | grep ' avenrun'", shell=True, stdout=PIPE)
@@ -123,6 +130,7 @@ def get_load(code):
     # print("get addr of evanrun: ", evanrun_addr)
     return code.replace("AVENRUN_ADDR", evanrun_addr)
 
+
 code = get_load(code)
 code = code.replace("LOAD_LIMIT_THRESHOLD", str(args.threshold))
 # !!!segfault
@@ -130,6 +138,8 @@ code = code.replace("LOAD_LIMIT_THRESHOLD", str(args.threshold))
 # addr = int(evanrun_addr, base=16)
 # load = ctypes.cast(addr, ctypes.POINTER(ctypes.c_ulong)).contents
 
+# 挂载ebpf程序
+# 返回ebpf程序对象
 def attach_bpf():
     from bcc import BPF, PerfType, PerfSWConfig
     bpf = BPF(text=code)
@@ -140,11 +150,15 @@ def attach_bpf():
 
 bpf = attach_bpf()
 
+# 卸载ebpf程序
+#bpf: ebpf程序的对象
 def detach_bpf(bpf):
     from bcc import BPF, PerfType, PerfSWConfig
     bpf.detach_perf_event(ev_type=PerfType.SOFTWARE,
                           ev_config=PerfSWConfig.CPU_CLOCK)
 
+# 将ebpf采集到的数据格式化为易读文本
+# 返回格式化后的文本
 def format_tex():
     stackcount = {TaskData(k): v.value for k,
                     v in bpf["stack_count"].items()}
@@ -170,6 +184,8 @@ def format_tex():
     tex += "_"*26 + timestr + "_"*26 + '\n'
     return tex
 
+# 将ebpf采集到的数据格式化为火焰图绘制文本
+# 返回格式化的文本
 def fla_tex():
     stackcount = {TaskData(k): v.value for k,
                   v in bpf["stack_count"].items()}
@@ -205,6 +221,7 @@ def fla_tex():
         tex += line
     return tex
 
+# 数据结构体对应的python类
 class TaskData:
     def __init__(self, a) -> None:
         self.pid = a.pid
@@ -214,6 +231,7 @@ class TaskData:
 
 mem_file = open(mem_path, "a")
 
+# 信号处理函数，负责卸载ebpf程序并关闭内存数据文件
 def sig_handle(*_):
     print("\b\bQuit...\n")
     detach_bpf(bpf)
@@ -223,26 +241,26 @@ def sig_handle(*_):
     exit()
 
 signal(2, sig_handle)
-signal(1, sig_handle)
+signal(1, sig_handle) # 设置中断信号处理函数
 start = 0.
-load = bpf["load"]
-period = 1/(args.freq + 1)
-print("start...")
+load = bpf["load"] # 平均负载值通过ebpf map返回给用户态
+period = 1/(args.freq + 1) # 设置监控周期
+print("start...") 
 
 for _ in range(args.time):
     load_5 = int(load[0].value)
     # print(load_5, end=' ')
-    if (load_5 < args.threshold):
+    if (load_5 < args.threshold): # 平均负载值小于阈值则睡眠一个监控周期
         sleep(period)
-    elif (time()-start > args.delay):
+    elif (time()-start > args.delay): # 超过阈值且可以输出
         # print(".")
         sleep(period*100)
         tex = format_tex()
         print(tex, file=mem_file)
         start = time()
-    else:
+    else: # 超过阈值但不可输出
         sleep(args.delay)
 
-signal(2, SIG_IGN)
+signal(2, SIG_IGN) # 清除中断信号处理函数
 signal(1, SIG_IGN)
-sig_handle()
+sig_handle() # 进行收尾工作
