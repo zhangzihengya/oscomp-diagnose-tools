@@ -76,3 +76,5 @@ uninstalled successfully
 | sched_delay     | 监控系统调度延迟。找到引起调度延迟的进程。                   |
 | utilization     | 监控系统资源利用率，找到CPU被哪些野进程干扰，以及进程对内存的使用情况。 |
 | drop-packet     | 监控内核TCP/IP各个流程中的丢包。                             |
+| tcp-retrans     | 统计内核态一段时间内，各个TCP连接上面的重传计数。             |
+| ping-delay      | 追踪ping包的时间延迟。                                      |
